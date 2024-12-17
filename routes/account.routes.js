@@ -221,72 +221,78 @@ router.get('/classes', isAuthenticated, async (req, res, next) => {
     }
 });
 
-router.get('/classes/:classId/rate', isAuthenticated, async (req, res) => {
-    const user = req.session.currentUser
+router.get('/classes/:classId', isAuthenticated, async (req, res, next) => {
     const classId = req.params.classId
-    const classFromDB = await Class.findById(classId).populate('teacher')
-    res.render('account/classes/rate', {user, class: classFromDB})
+    try {
+      const classData = await Class.findById(classId).populate('teacher')
+      res.status(200).json(classData);
+    } catch (error) {
+      next(err);
+    }
 });
 
-router.post('/classes/:classId/rate', isAuthenticated, async (req, res) => {
-    const user = req.session.currentUser
-    const { rating, text } = req.body
-    const classId = req.params.classId
+router.delete('/classes/:classId', isAuthenticated, async (req, res, next) => {
+  const userId = req.payload._id
+  const classId = req.params.classId
+  try {
     const classFromDB = await Class.findById(classId)
-    const { teacher, date, language, level, classType, locationType } = classFromDB
-    await Review.create({ author: user._id, subject: teacher, rating, text, date, language, level, classType, locationType})
-    classFromDB.isRated = true
+    const { teacher } = classFromDB
+    await classFromDB.deleteOne()
+    await Notification.create({ source: userId, target: teacher, type: 'cancel-student'})
+    res.status(200).send()
+  } catch (error) {
+    next(err);
+  }
+});
+
+router.put('/classes/:classId/reschedule', isAuthenticated, async (req, res, next) => {
+  const userId = req.payload._id
+  const classId = req.params.classId
+  try {
+    const classFromDB = await Class.findById(classId)
+    const { date, timeslot } = req.body
+    const [day, month, year] = date.split('-');
+    const formattedDate = `${year}-${month}-${day}`;
+    classFromDB.reschedule = {new_date: formattedDate, new_timeslot: timeslot, status: 'pending', initiator: userId}
     await classFromDB.save()
-    await Notification.create({ source: user._id, target: teacher, type: 'review'})
-    res.redirect('/account/classes')
+    const { teacher } = classFromDB
+    await Notification.create({ source: userId, target: teacher, type: 'reschedule-student-pending'})
+    res.status(200).send()
+  } catch (error) {
+    next(err);
+  }
 });
 
-router.get('/classes/:classId/cancel', isAuthenticated, async (req, res) => {
-  const user = req.session.currentUser
+router.put('/classes/:classId/reschedule/accept', isAuthenticated, async (req, res, next) => {
+  const userId = req.payload._id
   const classId = req.params.classId
-  const classFromDB = await Class.findById(classId)
-  const { teacher } = classFromDB
-  await Class.deleteOne({ _id: classId })
-  await Notification.create({ source: user._id, target: teacher, type: 'cancel-student'})
-  res.redirect('/account/classes')
+  try {
+    const classFromDB = await Class.findById(classId)
+    classFromDB.reschedule.status = "accepted"
+    classFromDB.date = classFromDB.reschedule.new_date
+    classFromDB.timeslot = classFromDB.reschedule.new_timeslot
+    await classFromDB.save()
+    const { teacher } = classFromDB
+    await Notification.create({ source: userId, target: teacher, type: 'reschedule-student-accept'})
+    res.status(200).send()
+  } catch (error) {
+    next(err);
+  }
 });
 
-router.post('/classes/:classId/reschedule', isAuthenticated, async (req, res) => {
-  const user = req.session.currentUser
+router.put('/classes/:classId/reschedule/decline', isAuthenticated, async (req, res, next) => {
+  const userId = req.payload._id
   const classId = req.params.classId
-  const classFromDB = await Class.findById(classId)
-  const { date, timeslot } = req.body
-  const [day, month, year] = date.split('-');
-  const formattedDate = `${year}-${month}-${day}`;
-  classFromDB.reschedule = {new_date: formattedDate, new_timeslot: timeslot, status: 'pending', initiator: user._id}
-  await classFromDB.save()
-  const { teacher } = classFromDB
-  await Notification.create({ source: user._id, target: teacher, type: 'reschedule-student-pending'})
-  res.redirect('/account/classes')
-});
-
-router.get('/classes/:classId/reschedule/accept', isAuthenticated, async (req, res) => {
-  const user = req.session.currentUser
-  const classId = req.params.classId
-  const classFromDB = await Class.findById(classId)
-  classFromDB.reschedule.status = "accepted"
-  classFromDB.date = classFromDB.reschedule.new_date
-  classFromDB.timeslot = classFromDB.reschedule.new_timeslot
-  await classFromDB.save()
-  const { teacher } = classFromDB
-  await Notification.create({ source: user._id, target: teacher, type: 'reschedule-student-accept'})
-  res.redirect('/account/classes')
-});
-
-router.get('/classes/:classId/reschedule/decline', isAuthenticated, async (req, res) => {
-  const user = req.session.currentUser
-  const classId = req.params.classId
-  const classFromDB = await Class.findById(classId)
-  classFromDB.reschedule.status = "declined"
-  await classFromDB.save()
-  const { teacher } = classFromDB
-  await Notification.create({ source: user._id, target: teacher, type: 'reschedule-student-decline'})
-  res.redirect('/account/classes')
+  try {
+    const classFromDB = await Class.findById(classId)
+    classFromDB.reschedule.status = "declined"
+    await classFromDB.save()
+    const { teacher } = classFromDB
+    await Notification.create({ source: userId, target: teacher, type: 'reschedule-student-decline'})
+    res.status(200).send()
+  } catch (error) {
+    next(err);
+  }
 });
   
 //================//
@@ -402,6 +408,19 @@ router.get('/reviews', isAuthenticated, async (req, res) => {
     const user = req.session.currentUser
     const reviews = await Review.find({ subject: user._id }).populate('author')
     res.render('account/reviews', {user, reviews})
+});
+
+router.post('/reviews/:classId', isAuthenticated, async (req, res) => {
+  const user = req.session.currentUser
+  const { rating, text } = req.body
+  const classId = req.params.classId
+  const classFromDB = await Class.findById(classId)
+  const { teacher, date, language, level, classType, locationType } = classFromDB
+  await Review.create({ author: user._id, subject: teacher, rating, text, date, language, level, classType, locationType})
+  classFromDB.isRated = true
+  await classFromDB.save()
+  await Notification.create({ source: user._id, target: teacher, type: 'review'})
+  res.redirect('/account/classes')
 });
 
 //================//

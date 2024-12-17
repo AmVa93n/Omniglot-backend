@@ -173,7 +173,7 @@ router.get("/match/teachers", isAuthenticated, async (req, res, next) => {
       let reviews = await Review.find({ subject: match._id });
       let avg = reviews.map(r => r.rating).reduce((acc, num) => acc + num, 0) / reviews.length;
       match.ratingAvg = avg.toFixed(1);
-      match.reviews = reviews.length;
+      match.reviewsNr = reviews.length;
     }
     res.status(200).json(matches);
   } catch (error) {
