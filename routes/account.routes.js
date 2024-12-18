@@ -28,7 +28,7 @@ router.get("/profile", isAuthenticated, async (req, res, next) => {
         const user = await User.findById(userId)
         res.status(200).json(user);
     } catch (error) {
-        next(err);
+        next(error);
     }
 });
   
@@ -37,8 +37,8 @@ router.delete("/profile", isAuthenticated, async (req, res, next) => {
     try {
         await User.findByIdAndDelete(userId)
         res.status(200).send()
-    } catch (err) {
-        next(err);
+    } catch (error) {
+        next(error);
     }
 });
   
@@ -68,8 +68,8 @@ router.put('/profile', fileUploader.single('pfp'), isAuthenticated, async (req, 
         lang_teach, lang_learn, professional: isProfessional, private: isPrivate, profilePic: newProfilePic,
         stripeAccountId }, { new: true });
       res.status(200).json(updatedUser);
-    } catch (err) {
-        next(err);
+    } catch (error) {
+        next(error);
     }
 });
 
@@ -198,9 +198,9 @@ router.get('/offers/:offerId/delete', isAuthenticated, async (req, res) => {
     res.redirect('/account/offers')
 });
 
-//================//
-// CLASSES
-//================//
+//====================//
+// CLASSES / CALENDAR
+//====================//
 
 router.get('/classes', isAuthenticated, async (req, res, next) => {
     const userId = req.payload._id
@@ -217,7 +217,7 @@ router.get('/classes', isAuthenticated, async (req, res, next) => {
       }
       res.status(200).json({upcomingClasses, pastClasses});
     } catch (error) {
-      next(err);
+      next(error);
     }
 });
 
@@ -227,7 +227,7 @@ router.get('/classes/:classId', isAuthenticated, async (req, res, next) => {
       const classData = await Class.findById(classId).populate('teacher')
       res.status(200).json(classData);
     } catch (error) {
-      next(err);
+      next(error);
     }
 });
 
@@ -236,12 +236,21 @@ router.delete('/classes/:classId', isAuthenticated, async (req, res, next) => {
   const classId = req.params.classId
   try {
     const classFromDB = await Class.findById(classId)
-    const { teacher } = classFromDB
+    let notifTarget, notifType
+    if (classFromDB.student.toString() === userId) {
+      notifTarget = classFromDB.teacher
+      notifType = 'cancel-student'
+    }
+    if (classFromDB.teacher.toString() === userId) {
+      notifTarget = classFromDB.student
+      notifType = 'cancel-teacher'
+    }
+    
     await classFromDB.deleteOne()
-    await Notification.create({ source: userId, target: teacher, type: 'cancel-student'})
+    await Notification.create({ source: userId, target: notifTarget, type: notifType})
     res.status(200).send()
   } catch (error) {
-    next(err);
+    next(error);
   }
 });
 
@@ -251,15 +260,23 @@ router.put('/classes/:classId/reschedule', isAuthenticated, async (req, res, nex
   try {
     const classFromDB = await Class.findById(classId)
     const { date, timeslot } = req.body
-    const [day, month, year] = date.split('-');
-    const formattedDate = `${year}-${month}-${day}`;
-    classFromDB.reschedule = {new_date: formattedDate, new_timeslot: timeslot, status: 'pending', initiator: userId}
+    classFromDB.reschedule = {new_date: date, new_timeslot: timeslot, status: 'pending', initiator: userId}
     await classFromDB.save()
-    const { teacher } = classFromDB
-    await Notification.create({ source: userId, target: teacher, type: 'reschedule-student-pending'})
-    res.status(200).send()
+
+    let notifTarget, notifType
+    if (classFromDB.student.toString() === userId) {
+      notifTarget = classFromDB.teacher
+      notifType = 'reschedule-student-pending'
+    }
+    if (classFromDB.teacher.toString() === userId) {
+      notifTarget = classFromDB.student
+      notifType = 'reschedule-teacher-pending'
+    }
+
+    await Notification.create({ source: userId, target: notifTarget, type: notifType})
+    res.status(200).json(classFromDB.reschedule)
   } catch (error) {
-    next(err);
+    next(error);
   }
 });
 
@@ -272,11 +289,20 @@ router.put('/classes/:classId/reschedule/accept', isAuthenticated, async (req, r
     classFromDB.date = classFromDB.reschedule.new_date
     classFromDB.timeslot = classFromDB.reschedule.new_timeslot
     await classFromDB.save()
-    const { teacher } = classFromDB
-    await Notification.create({ source: userId, target: teacher, type: 'reschedule-student-accept'})
-    res.status(200).send()
+    let notifTarget, notifType
+    if (classFromDB.student.toString() === userId) {
+      notifTarget = classFromDB.teacher
+      notifType = 'reschedule-student-accept'
+    }
+    if (classFromDB.teacher.toString() === userId) {
+      notifTarget = classFromDB.student
+      notifType = 'reschedule-teacher-accept'
+    }
+    
+    await Notification.create({ source: userId, target: notifTarget, type: notifType})
+    res.status(200).json(classFromDB)
   } catch (error) {
-    next(err);
+    next(error);
   }
 });
 
@@ -287,17 +313,22 @@ router.put('/classes/:classId/reschedule/decline', isAuthenticated, async (req, 
     const classFromDB = await Class.findById(classId)
     classFromDB.reschedule.status = "declined"
     await classFromDB.save()
-    const { teacher } = classFromDB
-    await Notification.create({ source: userId, target: teacher, type: 'reschedule-student-decline'})
-    res.status(200).send()
+    let notifTarget, notifType
+    if (classFromDB.student.toString() === userId) {
+      notifTarget = classFromDB.teacher
+      notifType = 'reschedule-student-decline'
+    }
+    if (classFromDB.teacher.toString() === userId) {
+      notifTarget = classFromDB.student
+      notifType = 'reschedule-teacher-decline'
+    }
+    
+    await Notification.create({ source: userId, target: notifTarget, type: notifType})
+    res.status(200).json(classFromDB)
   } catch (error) {
-    next(err);
+    next(error);
   }
 });
-  
-//================//
-// CALENDAR
-//================//
 
 function convertClassesToEvents(classesFromDB) {
   const events = []
@@ -336,68 +367,15 @@ function convertClassesToEvents(classesFromDB) {
     return events
 }
 
-router.get('/calendar', isAuthenticated, async (req, res) => {
-    const user = req.session.currentUser
-    const classes = await Class.find({ teacher: user._id }).populate('student').lean()
-    const events = convertClassesToEvents(classes)
-    res.render('account/calendar', {user, classes, events: JSON.stringify(events)})
-});
-
-router.get('/calendar/:classId', isAuthenticated, async (req, res) => {
-  const user = req.session.currentUser
-  const classId = req.params.classId
-  const classes = await Class.find({ teacher: user._id }).populate('student').lean()
-  const events = convertClassesToEvents(classes)
-  const managedClass = classes.find(cl => cl._id == classId)
-  res.render('account/calendar', {user, classes, events: JSON.stringify(events), managedClass})
-});
-
-router.get('/calendar/:classId/cancel', isAuthenticated, async (req, res) => {
-  const user = req.session.currentUser
-  const classId = req.params.classId
-  const classFromDB = await Class.findById(classId)
-  const { student } = classFromDB
-  await Class.deleteOne({ _id: classId })
-  await Notification.create({ source: user._id, target: student, type: 'cancel-teacher'})
-  res.redirect('/account/calendar')
-});
-
-router.post('/calendar/:classId/reschedule', isAuthenticated, async (req, res) => {
-  const user = req.session.currentUser
-  const classId = req.params.classId
-  const classFromDB = await Class.findById(classId)
-  const { date, timeslot } = req.body
-  const [day, month, year] = date.split('-');
-  const formattedDate = `${year}-${month}-${day}`;
-  classFromDB.reschedule = {new_date: formattedDate, new_timeslot: timeslot, status: 'pending', initiator: user._id}
-  await classFromDB.save()
-  const { student } = classFromDB
-  await Notification.create({ source: user._id, target: student, type: 'reschedule-teacher-pending'})
-  res.redirect(`/account/calendar/${classId}`)
-});
-
-router.get('/calendar/:classId/reschedule/accept', isAuthenticated, async (req, res) => {
-  const user = req.session.currentUser
-  const classId = req.params.classId
-  const classFromDB = await Class.findById(classId)
-  classFromDB.reschedule.status = "accepted"
-  classFromDB.date = classFromDB.reschedule.new_date
-  classFromDB.timeslot = classFromDB.reschedule.new_timeslot
-  await classFromDB.save()
-  const { student } = classFromDB
-  await Notification.create({ source: user._id, target: student, type: 'reschedule-teacher-accept'})
-  res.redirect(`/account/calendar/${classId}`)
-});
-
-router.get('/calendar/:classId/reschedule/decline', isAuthenticated, async (req, res) => {
-  const user = req.session.currentUser
-  const classId = req.params.classId
-  const classFromDB = await Class.findById(classId)
-  classFromDB.reschedule.status = "declined"
-  await classFromDB.save()
-  const { student } = classFromDB
-  await Notification.create({ source: user._id, target: student, type: 'reschedule-teacher-decline'})
-  res.redirect(`/account/calendar/${classId}`)
+router.get('/calendar', isAuthenticated, async (req, res, next) => {
+    const userId = req.payload._id
+    try {
+      const classes = await Class.find({ teacher: userId }).populate('student').lean()
+      const events = convertClassesToEvents(classes)
+      res.status(200).json({classes, events});
+    } catch (error) {
+      next(error);
+    }
 });
 
 //================//
