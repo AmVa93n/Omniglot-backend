@@ -42,7 +42,7 @@ router.delete("/profile", isAuthenticated, async (req, res, next) => {
     }
 });
   
-router.put('/profile', fileUploader.single('pfp'), isAuthenticated, async (req, res, next) => {
+router.put('/profile', fileUploader.single('profilePic'), isAuthenticated, async (req, res, next) => {
     const userId = req.payload._id
     const { username, email, gender, birthdate, country, lang_teach, lang_learn, professional, private, pfp } = req.body;
     let stripeAccountId = req.body.stripeAccountId || null
@@ -127,48 +127,39 @@ router.get("/inbox/:chatId/delete", isAuthenticated, async (req, res) => {
 // OFFERS
 //================//
 
-router.get('/offers', isAuthenticated, async (req, res) => {
-    const user = req.session.currentUser
-    const userDB = await User.findById(user._id).populate('offers')
-    const offers = userDB.offers
-    res.render('account/offers/offers', {user, offers})
-});
-  
-router.get('/offers/new', isAuthenticated, async (req, res) => {
-    const user = req.session.currentUser
-    res.render('account/offers/create', {user})
-});
-  
-router.post('/offers/new', isAuthenticated, async (req, res) => {
-    const user = req.session.currentUser
-    const userDB = await User.findById(user._id);
-    const { name, language, level, locationType, location, weekdays, timeslots, 
-      duration, classType, maxGroupSize, price} = req.body;
-  
-    // Check that all fields are provided
-    if ([name,language,level,locationType,classType,weekdays,timeslots,duration,price].some(field => !field)) {
-      res.status(400).render("account/offers/create", {
-        errorMessage:
-          "Some mandatory fields are missing. Please try again",
-      });
-      return;
+router.get('/offers', isAuthenticated, async (req, res, next) => {
+    const userId = req.payload._id
+    try {
+      const user = await User.findById(userId).populate('offers')
+      res.status(200).json(user.offers);
+    } catch (error) {
+      next(error);
     }
-  
-    const offer = await Offer.create({ name, language, level, locationType, location, weekdays, timeslots, 
-      duration, classType, maxGroupSize, price});
-    userDB.offers.push(offer._id);
-    await userDB.save();
-    res.redirect('/account/offers')
 });
   
-router.get('/offers/:offerId/edit', isAuthenticated, async (req, res) => {
-    const user = req.session.currentUser
-    const offerId = req.params.offerId
-    const offer = await Offer.findById(offerId)
-    res.render('account/offers/edit', {user, offer})
+router.post('/offer', isAuthenticated, async (req, res, next) => {
+    const userId = req.payload._id
+    try {
+      const userDB = await User.findById(userId);
+      const { name, language, level, locationType, location, weekdays, timeslots, duration, classType, maxGroupSize, price} = req.body;
+    
+      // Check that all fields are provided
+      if ([name,language,level,locationType,classType,weekdays,timeslots,duration,price].some(field => !field)) {
+        res.status(400).json({ message: "Some mandatory fields are missing. Please try again" });
+        return;
+      }
+    
+      const offer = await Offer.create({ name, language, level, locationType, location, weekdays, timeslots, 
+        duration, classType, maxGroupSize, price});
+      userDB.offers.push(offer._id);
+      await userDB.save();
+      res.status(200).send();
+    } catch (error) {
+      next(error);
+    }
 });
 
-router.post('/offers/:offerId/edit', isAuthenticated, async (req, res) => {
+router.put('/offer/:offerId', isAuthenticated, async (req, res, next) => {
     const { name, language, level, locationType, weekdays, timeslots, duration, classType, price } = req.body;
     let { location, maxGroupSize } = req.body;
     if (!location) location = null
@@ -177,25 +168,27 @@ router.post('/offers/:offerId/edit', isAuthenticated, async (req, res) => {
   
     // Check that all fields are provided
     if ([name,language,level,locationType,classType,weekdays,timeslots,duration,price].some(field => !field)) {
-        const user = req.session.currentUser
-        const offer = await Offer.findById(offerId)
-        res.status(400).render("account/offers/edit", {user, offer, errorMessage: "Some mandatory fields are missing. Please try again"});
+        res.status(400).json({message: "Some mandatory fields are missing. Please try again"});
         return;
     }
   
     try {
       await Offer.findByIdAndUpdate(offerId, {  name, language, level, locationType, location, weekdays, timeslots, 
         duration, classType, maxGroupSize, price });
-      res.redirect('/account/offers'); // Redirect to my offers page
+      res.status(200).send();
     } catch (err) {
-      res.status(500).render('account/offers/edit', { errorMessage: 'Failed to update offer. Please try again.'});
+      next(err);
     }
 });
   
-router.get('/offers/:offerId/delete', isAuthenticated, async (req, res) => {
+router.delete('/offers/:offerId', isAuthenticated, async (req, res, next) => {
     const offerId = req.params.offerId
-    await Offer.findByIdAndDelete(offerId)
-    res.redirect('/account/offers')
+    try {
+      await Offer.findByIdAndDelete(offerId)
+      res.status(200).send()
+    } catch (error) {
+      next(error);
+    }
 });
 
 //====================//
@@ -219,6 +212,17 @@ router.get('/classes', isAuthenticated, async (req, res, next) => {
     } catch (error) {
       next(error);
     }
+});
+
+router.get('/calendar', isAuthenticated, async (req, res, next) => {
+  const userId = req.payload._id
+  try {
+    const classes = await Class.find({ teacher: userId }).populate('student').lean()
+    
+    res.status(200).json(classes);
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.get('/classes/:classId', isAuthenticated, async (req, res, next) => {
@@ -258,23 +262,23 @@ router.put('/classes/:classId/reschedule', isAuthenticated, async (req, res, nex
   const userId = req.payload._id
   const classId = req.params.classId
   try {
-    const classFromDB = await Class.findById(classId)
+    const updatedClass = await Class.findById(classId)
     const { date, timeslot } = req.body
-    classFromDB.reschedule = {new_date: date, new_timeslot: timeslot, status: 'pending', initiator: userId}
-    await classFromDB.save()
+    updatedClass.reschedule = {new_date: date, new_timeslot: timeslot, status: 'pending', initiator: userId}
+    await updatedClass.save()
 
     let notifTarget, notifType
-    if (classFromDB.student.toString() === userId) {
-      notifTarget = classFromDB.teacher
+    if (updatedClass.student.toString() === userId) {
+      notifTarget = updatedClass.teacher
       notifType = 'reschedule-student-pending'
     }
-    if (classFromDB.teacher.toString() === userId) {
-      notifTarget = classFromDB.student
+    if (updatedClass.teacher.toString() === userId) {
+      notifTarget = updatedClass.student
       notifType = 'reschedule-teacher-pending'
     }
 
     await Notification.create({ source: userId, target: notifTarget, type: notifType})
-    res.status(200).json(classFromDB.reschedule)
+    res.status(200).json(updatedClass.reschedule)
   } catch (error) {
     next(error);
   }
@@ -284,23 +288,23 @@ router.put('/classes/:classId/reschedule/accept', isAuthenticated, async (req, r
   const userId = req.payload._id
   const classId = req.params.classId
   try {
-    const classFromDB = await Class.findById(classId)
-    classFromDB.reschedule.status = "accepted"
-    classFromDB.date = classFromDB.reschedule.new_date
-    classFromDB.timeslot = classFromDB.reschedule.new_timeslot
-    await classFromDB.save()
+    const updatedClass = await Class.findById(classId)
+    updatedClass.reschedule.status = "accepted"
+    updatedClass.date = updatedClass.reschedule.new_date
+    updatedClass.timeslot = updatedClass.reschedule.new_timeslot
+    await updatedClass.save()
     let notifTarget, notifType
-    if (classFromDB.student.toString() === userId) {
-      notifTarget = classFromDB.teacher
+    if (updatedClass.student.toString() === userId) {
+      notifTarget = updatedClass.teacher
       notifType = 'reschedule-student-accept'
     }
-    if (classFromDB.teacher.toString() === userId) {
-      notifTarget = classFromDB.student
+    if (updatedClass.teacher.toString() === userId) {
+      notifTarget = updatedClass.student
       notifType = 'reschedule-teacher-accept'
     }
     
     await Notification.create({ source: userId, target: notifTarget, type: notifType})
-    res.status(200).json(classFromDB)
+    res.status(200).json(updatedClass)
   } catch (error) {
     next(error);
   }
@@ -310,72 +314,24 @@ router.put('/classes/:classId/reschedule/decline', isAuthenticated, async (req, 
   const userId = req.payload._id
   const classId = req.params.classId
   try {
-    const classFromDB = await Class.findById(classId)
-    classFromDB.reschedule.status = "declined"
-    await classFromDB.save()
+    const updatedClass = await Class.findById(classId)
+    updatedClass.reschedule.status = "declined"
+    await updatedClass.save()
     let notifTarget, notifType
-    if (classFromDB.student.toString() === userId) {
-      notifTarget = classFromDB.teacher
+    if (updatedClass.student.toString() === userId) {
+      notifTarget = updatedClass.teacher
       notifType = 'reschedule-student-decline'
     }
-    if (classFromDB.teacher.toString() === userId) {
-      notifTarget = classFromDB.student
+    if (updatedClass.teacher.toString() === userId) {
+      notifTarget = updatedClass.student
       notifType = 'reschedule-teacher-decline'
     }
     
     await Notification.create({ source: userId, target: notifTarget, type: notifType})
-    res.status(200).json(classFromDB)
+    res.status(200).json(updatedClass)
   } catch (error) {
     next(error);
   }
-});
-
-function convertClassesToEvents(classesFromDB) {
-  const events = []
-    for (let classDB of classesFromDB) {
-        let [year, month, day] = classDB.date.split('-').map(Number);
-        let dateObj = new Date(year, month - 1, day);
-        const currentDate = new Date();
-        classDB.isPast = dateObj < currentDate
-
-        const date = [dateObj.getFullYear(),
-        (dateObj.getMonth() + 1).toString().padStart(2, '0'),
-        dateObj.getDate().toString().padStart(2, '0')
-        ].join('-');
-
-        let [hours, minutes] = classDB.timeslot.split(':').map(Number);
-        let totalMinutes = hours * 60 + minutes + Number(classDB.duration);
-        let newHours = Math.floor(totalMinutes / 60) % 24;
-        let newMinutes = totalMinutes % 60;
-        newHours = newHours.toString().padStart(2, '0');
-        newMinutes = newMinutes.toString().padStart(2, '0');
-        const endTime = `${newHours}:${newMinutes}`;
-
-        const start = `${date}T${classDB.timeslot}:00`;
-        const end = `${date}T${endTime}:00`;
-        classDB.endTime = endTime
-
-        let event = {
-        title: classDB.student.username,
-        id: classDB._id,
-        start: start,
-        end: end,
-        display: 'block'
-        }
-        events.push(event)
-    }
-    return events
-}
-
-router.get('/calendar', isAuthenticated, async (req, res, next) => {
-    const userId = req.payload._id
-    try {
-      const classes = await Class.find({ teacher: userId }).populate('student').lean()
-      const events = convertClassesToEvents(classes)
-      res.status(200).json({classes, events});
-    } catch (error) {
-      next(error);
-    }
 });
 
 //================//
