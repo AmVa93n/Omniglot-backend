@@ -137,7 +137,7 @@ router.get('/offers', isAuthenticated, async (req, res, next) => {
     }
 });
   
-router.post('/offer', isAuthenticated, async (req, res, next) => {
+router.post('/offers', isAuthenticated, async (req, res, next) => {
     const userId = req.payload._id
     try {
       const userDB = await User.findById(userId);
@@ -153,13 +153,13 @@ router.post('/offer', isAuthenticated, async (req, res, next) => {
         duration, classType, maxGroupSize, price});
       userDB.offers.push(offer._id);
       await userDB.save();
-      res.status(200).send();
+      res.status(200).send(offer);
     } catch (error) {
       next(error);
     }
 });
 
-router.put('/offer/:offerId', isAuthenticated, async (req, res, next) => {
+router.put('/offers/:offerId', isAuthenticated, async (req, res, next) => {
     const { name, language, level, locationType, weekdays, timeslots, duration, classType, price } = req.body;
     let { location, maxGroupSize } = req.body;
     if (!location) location = null
@@ -173,9 +173,9 @@ router.put('/offer/:offerId', isAuthenticated, async (req, res, next) => {
     }
   
     try {
-      await Offer.findByIdAndUpdate(offerId, {  name, language, level, locationType, location, weekdays, timeslots, 
+      const updatedOffer = await Offer.findByIdAndUpdate(offerId, {  name, language, level, locationType, location, weekdays, timeslots, 
         duration, classType, maxGroupSize, price });
-      res.status(200).send();
+      res.status(200).send(updatedOffer);
     } catch (err) {
       next(err);
     }
@@ -361,23 +361,29 @@ router.post('/reviews/:classId', isAuthenticated, async (req, res) => {
 // Decks
 //================//
 
-router.get('/decks', isAuthenticated, async (req, res) => {
-  const user = req.session.currentUser
-  const decks = await Deck.find({ creator: user._id }).populate('cards')
-  for (let deck of decks) {
-    deck.mastered = deck.cards.filter(card => card.priority == -10)
+router.get('/decks', isAuthenticated, async (req, res, next) => {
+  const userId = req.payload._id
+  try {
+    const decks = await Deck.find({ creator: userId }).populate('cards')
+    for (let deck of decks) {
+      deck.mastered = deck.cards.filter(card => card.priority === -10)
+    }
+    res.status(200).json(decks);
+  } catch (error) {
+    next(error);
   }
-  res.render('account/decks/decks', {user, decks})
 });
 
-router.get('/decks/new', isAuthenticated, async (req, res) => {
-  const user = req.session.currentUser
-  res.render('account/decks/create', {user})
-});
-
-router.post('/decks/new', isAuthenticated, async (req, res) => {
-  const user = req.session.currentUser
+router.post('/decks', isAuthenticated, async (req, res, next) => {
+  const userId = req.payload._id
   const { language, level, topic } = req.body;
+
+  // Check that all fields are provided
+  if ([language,level,topic].some(field => !field)) {
+    res.status(400).json({ message: "Some mandatory fields are missing. Please try again" });
+    return;
+  }
+
   const cardsFront = []
   const cardsBack = []
   
@@ -392,29 +398,27 @@ router.post('/decks/new', isAuthenticated, async (req, res) => {
     cards.push({front: cardsFront[i], back: cardsBack[i]})
   }
 
-  // Check that all fields are provided
-  if ([language,level,topic].some(field => !field)) {
-    res.status(400).render("account/decks/create", {user, errorMessage: "Some mandatory fields are missing. Please try again"});
-    return;
+  try {
+    const cardsDB = await Flashcard.create(cards)
+    const cardsIds = cardsDB.map(card => card._id)
+
+    const deck = await Deck.create({ creator: userId, language, level, topic, cards: cardsIds });
+    res.status(200).send(deck);
+  } catch (error) {
+    next(error);
   }
-  const cardsDB = await Flashcard.create(cards)
-  const cardsIds = cardsDB.map(card => card._id)
-
-  await Deck.create({ creator: user._id, language, level, topic, cards: cardsIds });
-  res.redirect('/account/decks')
 });
 
-router.get('/decks/:deckId/edit', isAuthenticated, async (req, res) => {
-  const user = req.session.currentUser
-  const deckId = req.params.deckId
-  const deck = await Deck.findById(deckId).populate('cards').lean()
-  res.render('account/decks/edit', {user, deck, cards: deck.cards})
-});
-
-router.post('/decks/:deckId/edit', isAuthenticated, async (req, res) => {
-  const user = req.session.currentUser
+router.put('/decks/:deckId', isAuthenticated, async (req, res, next) => {
   const deckId = req.params.deckId
   const { language, level, topic } = req.body;
+
+  // Check that all fields are provided
+  if ([language,level,topic].some(field => !field)) {
+    res.status(400).render("account/decks/edit", {user, errorMessage: "Some mandatory fields are missing. Please try again"});
+    return;
+  }
+
   const cardsFront = []
   const cardsBack = []
   const cardsPriority = []
@@ -431,26 +435,29 @@ router.post('/decks/:deckId/edit', isAuthenticated, async (req, res) => {
     cards.push({front: cardsFront[i], back: cardsBack[i]})
   }
 
-  // Check that all fields are provided
-  if ([language,level,topic].some(field => !field)) {
-    res.status(400).render("account/decks/edit", {user, errorMessage: "Some mandatory fields are missing. Please try again"});
-    return;
-  }
-  const deck = await Deck.findById(deckId)
-  await Flashcard.deleteMany({ _id: { $in: deck.cards } })
-  const cardsDB = await Flashcard.create(cards)
-  const cardsIds = cardsDB.map(card => card._id)
+  try {
+    const deck = await Deck.findById(deckId)
+    await Flashcard.deleteMany({ _id: { $in: deck.cards } })
+    const cardsDB = await Flashcard.create(cards)
+    const cardsIds = cardsDB.map(card => card._id)
 
-  await Deck.updateOne(deck, { creator: user._id, language, level, topic, cards: cardsIds });
-  res.redirect('/account/decks')
+    await Deck.updateOne(deck, { language, level, topic, cards: cardsIds });
+    res.redirect('/account/decks')
+  } catch (error) {
+    next(error);
+  }
 });
 
-router.get('/decks/:deckId/delete', isAuthenticated, async (req, res) => {
+router.delete('/decks/:deckId', isAuthenticated, async (req, res, next) => {
   const deckId = req.params.deckId
-  const deck = await Deck.findById(deckId)
-  await Flashcard.deleteMany({ _id: { $in: deck.cards } })
-  await Deck.findByIdAndDelete(deckId)
-  res.redirect('/account/decks')
+  try {
+    const deck = await Deck.findById(deckId)
+    await Flashcard.deleteMany({ _id: { $in: deck.cards } })
+    await Deck.findByIdAndDelete(deckId)
+    res.status(200).send()
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.get('/decks/:deckId/play', isAuthenticated, async (req, res) => {
