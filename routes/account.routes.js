@@ -77,15 +77,14 @@ router.put('/profile', fileUploader.single('profilePic'), isAuthenticated, async
 // MESSAGING
 //================//
 
-router.get("/inbox", isAuthenticated, async (req, res) => {
-    const user = req.session.currentUser
-    res.render("account/inbox", {user});
-});
-  
-router.get("/inbox/:chatId", isAuthenticated, async (req, res) => {
-    const user = req.session.currentUser
-    const chatId = req.params.chatId;
-    res.render("account/inbox", {user, chatId});
+router.get('/inbox', isAuthenticated, async (req, res, next) => {
+    const userId = req.payload._id
+    try {
+      const chats = await Chat.find({ participants: userId }).populate('participants messages')
+      res.status(200).json(chats);
+    } catch (error) {
+      next(error);
+    }
 });
   
 router.post('/inbox', isAuthenticated, async (req, res) => {
@@ -338,10 +337,14 @@ router.put('/classes/:classId/reschedule/decline', isAuthenticated, async (req, 
 // Reviews
 //================//
 
-router.get('/reviews', isAuthenticated, async (req, res) => {
-    const user = req.session.currentUser
-    const reviews = await Review.find({ subject: user._id }).populate('author')
-    res.render('account/reviews', {user, reviews})
+router.get('/reviews', isAuthenticated, async (req, res, next) => {
+    const userId = req.payload._id
+    try {
+      const reviews = await Review.find({ subject: userId }).populate('author')
+      res.status(200).json(reviews);
+    } catch (error) {
+      next(error);
+    }
 });
 
 router.post('/reviews/:classId', isAuthenticated, async (req, res) => {
@@ -494,27 +497,31 @@ router.get('/decks/:deckId/clone', isAuthenticated, async (req, res) => {
 // Wallet
 //================//
 
-router.get('/wallet', isAuthenticated, async (req, res) => {
-  const user = req.session.currentUser
-  const userDB = await User.findById(user._id)
-  const accountId = userDB.stripeAccountId
+router.get('/wallet', isAuthenticated, async (req, res, next) => {
+  const userId = req.payload._id
+  try {
+    const userDB = await User.findById(userId)
+    const accountId = userDB.stripeAccountId
 
-  const transactions = await stripe.balanceTransactions.list({
-    stripeAccount: accountId,
-    limit: 100 // Adjust the limit as needed
-  });
-  transactions.data.reverse()
-  for (let i = 0; i < transactions.data.length; i++) {
-    const trans = transactions.data[i]
-    trans.amount = trans.amount / 100
-    trans.currency = '€'
-    trans.balance = i > 0 ? Number(transactions.data[i-1].balance) + trans.amount : trans.amount
-    trans.balance = trans.balance.toFixed(2)
-    trans.date = moment.unix(trans.created).format('DD-MM-YYYY HH:mm:ss') // Format the Unix timestamp
+    const transactions = await stripe.balanceTransactions.list({
+      stripeAccount: accountId,
+      limit: 100 // Adjust the limit as needed
+    });
+    transactions.data.reverse()
+    for (let i = 0; i < transactions.data.length; i++) {
+      const trans = transactions.data[i]
+      trans.amount = trans.amount / 100
+      trans.currency = '€'
+      trans.balance = i > 0 ? Number(transactions.data[i-1].balance) + trans.amount : trans.amount
+      trans.balance = trans.balance.toFixed(2)
+      trans.date = moment.unix(trans.created).format('DD-MM-YYYY HH:mm:ss') // Format the Unix timestamp
+    }
+    transactions.data.reverse()
+    
+    res.status(200).json({ transactions: transactions.data, accountId })
+  } catch (error) {
+    next(error);
   }
-  transactions.data.reverse()
-  
-  res.render('account/wallet', {user, transactions: transactions.data, accountId})
 });
 
 module.exports = router;
