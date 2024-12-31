@@ -347,17 +347,21 @@ router.get('/reviews', isAuthenticated, async (req, res, next) => {
     }
 });
 
-router.post('/reviews/:classId', isAuthenticated, async (req, res) => {
-  const user = req.session.currentUser
+router.post('/reviews/:classId', isAuthenticated, async (req, res, next) => {
+  const userId = req.payload._id
   const { rating, text } = req.body
   const classId = req.params.classId
-  const classFromDB = await Class.findById(classId)
-  const { teacher, date, language, level, classType, locationType } = classFromDB
-  await Review.create({ author: user._id, subject: teacher, rating, text, date, language, level, classType, locationType})
-  classFromDB.isRated = true
-  await classFromDB.save()
-  await Notification.create({ source: user._id, target: teacher, type: 'review'})
-  res.redirect('/account/classes')
+  try {
+    const updatedClass = await Class.findById(classId)
+    const { teacher, date, language, level, classType, locationType } = updatedClass
+    await Review.create({ author: userId, subject: teacher, rating, text, date, language, level, classType, locationType})
+    updatedClass.isRated = true
+    await updatedClass.save()
+    await Notification.create({ source: userId, target: teacher, type: 'review'})
+    res.status(200).json(updatedClass)
+  } catch (error) {
+    next(error);
+  }
 });
 
 //================//
@@ -367,7 +371,7 @@ router.post('/reviews/:classId', isAuthenticated, async (req, res) => {
 router.get('/decks', isAuthenticated, async (req, res, next) => {
   const userId = req.payload._id
   try {
-    const decks = await Deck.find({ creator: userId }).populate('cards')
+    const decks = await Deck.find({ creator: userId }).populate('cards').lean()
     for (let deck of decks) {
       deck.mastered = deck.cards.filter(card => card.priority === -10)
     }
@@ -463,34 +467,37 @@ router.delete('/decks/:deckId', isAuthenticated, async (req, res, next) => {
   }
 });
 
-router.get('/decks/:deckId/play', isAuthenticated, async (req, res) => {
-  const user = req.session.currentUser
-  const deckId = req.params.deckId
-  const deck = await Deck.findById(deckId).populate('cards')
-  res.render('account/decks/play', {user, deck})
-});
-
-router.post('/decks/:deckId/play', isAuthenticated, async (req, res) => {
-  const { cards } = req.body
-  for (let card of cards) {
-    await Flashcard.findByIdAndUpdate(card._id, { priority: card.priority })
+router.put('/decks/:deckId/cards', isAuthenticated, async (req, res, next) => {
+  const cards = req.body
+  const updatedCards = []
+  try {
+    for (let card of cards) {
+      const updatedCard = await Flashcard.findByIdAndUpdate(card._id, { priority: card.priority })
+      updatedCards.push(updatedCard)
+    }
+    res.status(200).json(updatedCards)
+  } catch (error) {
+    next(error);
   }
-  res.status(200).send()
 });
 
-router.get('/decks/:deckId/clone', isAuthenticated, async (req, res) => {
-  const user = req.session.currentUser
+router.post('/decks/:deckId/clone', isAuthenticated, async (req, res, next) => {
+  const userId = req.payload._id
   const deckId = req.params.deckId
-  const deck = await Deck.findById(deckId).populate('cards')
-  const cardsData = []
-  deck.cards.forEach(card => {
-    cardsData.push({front: card.front, back: card.back, priority: 0})
-  })
-  const clonedCards = await Flashcard.create(cardsData)
-  await Deck.create({ creator: user._id, language: deck.language, level: deck.level, 
-    topic: deck.topic + " (cloned)", cards: clonedCards })
-  await Notification.create({ source: user._id, target: deck.creator, type: 'clone'})
-  res.redirect('/account/decks')
+  try {
+    const deck = await Deck.findById(deckId).populate('cards')
+    const cardsData = []
+    deck.cards.forEach(card => {
+      cardsData.push({front: card.front, back: card.back, priority: 0})
+    })
+    const clonedCards = await Flashcard.create(cardsData)
+    await Deck.create({ creator: userId, language: deck.language, level: deck.level, 
+      topic: deck.topic + " (cloned)", cards: clonedCards })
+    await Notification.create({ source: userId, target: deck.creator, type: 'clone'})
+    res.status(200).send()
+  } catch (error) {
+    next(error);
+  }
 });
 
 //================//
