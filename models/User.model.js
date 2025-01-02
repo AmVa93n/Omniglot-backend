@@ -48,9 +48,7 @@ const userSchema = new Schema(
     },
     stripeAccountId: {
       type: String
-    },
-    chats: [{ type: Schema.Types.ObjectId, ref: 'Chat' }],
-    offers: [{ type: Schema.Types.ObjectId, ref: 'Offer' }]
+    }
   },
   {
     // this second object adds extra properties: `createdAt` and `updatedAt`

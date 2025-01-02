@@ -46,45 +46,19 @@ router.get("/users/:userId", async (req, res, next) => {
 
   try {
     // Find the user by ID and populate their offers
-    const viewedUser = await User.findById(viewedUserId).populate('offers').lean();
+    const viewedUser = await User.findById(viewedUserId).lean();
     if (!viewedUser) {
-      return res.status(404).render("error", { message: "User not found" });
+      return res.status(404).json({ message: "User not found" });
     }
     
-    // Populate reviews and decks for the viewed user
+    // Populate offers, reviews and decks for the viewed user
+    viewedUser.offers = await Offer.find({ creator: viewedUserId });
     viewedUser.reviews = await Review.find({ subject: viewedUserId }).populate('author');
     viewedUser.decks = await Deck.find({ creator: viewedUserId });
 
     res.status(200).json(viewedUser);
   } catch (error) {
     next(err);
-  }
-});
-
-// Example of search route for products and users
-router.get("/search", async (req, res) => {
-  const query = req.query.q;
-  if (!query) {
-    return res.json([]);
-  }
-
-  const regex = new RegExp(query, 'i');
-
-  try {
-    // Search for offers and users based on the query
-    const offers = await Offer.find({ name: regex }).exec();
-    const users = await User.find({
-      $or: [
-        { username: regex },
-        { country: regex },
-      ],
-    }).exec();
-
-    // Return the search results
-    res.json({ offers, users });
-  } catch (error) {
-    console.error('Error during search:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
   }
 });
 

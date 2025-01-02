@@ -5,6 +5,11 @@ const app = require('../app');
 const server = http.createServer(app);
 const io = socketIo(server);
 
+const User = require('../models/User.model');
+const Chat = require('../models/Chat.model');
+const Message = require('../models/Message.model');
+const Notification = require('../models/Notification.model');
+
 io.on('connection', (socket) => {
 
   socket.on('join', async (userId) => {

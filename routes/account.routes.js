@@ -19,7 +19,7 @@ const Flashcard = require("../models/Flashcard.model");
 const { isAuthenticated } = require("../middleware/jwt.middleware.js");
 
 //================//
-// PROFILE
+// Profile
 //================//
 
 router.get("/profile", isAuthenticated, async (req, res, next) => {
@@ -74,7 +74,7 @@ router.put('/profile', fileUploader.single('profilePic'), isAuthenticated, async
 });
 
 //================//
-// MESSAGING
+// Messaging
 //================//
 
 router.get('/inbox', isAuthenticated, async (req, res, next) => {
@@ -87,50 +87,46 @@ router.get('/inbox', isAuthenticated, async (req, res, next) => {
     }
 });
   
-router.post('/inbox', isAuthenticated, async (req, res) => {
+router.post('/inbox', isAuthenticated, async (req, res, next) => {
     const { targetUserId } = req.body;
-    const user = req.session.currentUser
-    const initUser = await User.findById(user._id);
-    const targetUser = await User.findById(targetUserId);
-  
-    // Check if a chat already exists
-    const existingChat = await Chat.findOne({
-      participants: { $all: [initUser._id, targetUser._id] }
-    });
-    if (existingChat) {
-      res.redirect(`/account/inbox/${existingChat._id}`);
-      return
+    const userId = req.payload._id
+    try {
+      // Check if a chat already exists
+      const existingChat = await Chat.findOne({
+        participants: { $all: [userId, targetUserId] }
+      });
+      if (existingChat) {
+        res.status(200).json(existingChat);
+        return
+      }
+      const newChat = await Chat.create({participants: [userId, targetUserId], messages: []});
+      res.status(200).json(newChat);
+    } catch (error) {
+      next(error);
     }
-  
-    const newChat = new Chat({
-      participants: [user._id, targetUser._id],
-      messages: []
-    });
-    await newChat.save();
-    initUser.chats.push(newChat._id);
-    targetUser.chats.push(newChat._id);
-    await initUser.save();
-    await targetUser.save();
-    res.redirect(`/account/inbox/${newChat._id}`);
 });
 
-router.get("/inbox/:chatId/delete", isAuthenticated, async (req, res) => {
-  const user = req.session.currentUser
+router.delete("/inbox/:chatId", isAuthenticated, async (req, res, next) => {
+  const userId = req.payload._id;
   const chatId = req.params.chatId;
-  const chat = await Chat.findById(chatId)
-  await Message.deleteMany({ _id: { $in: chat.messages }, sender: user._id });
-  res.redirect("/account/inbox");
+  try {
+    const chat = await Chat.findById(chatId)
+    await Message.deleteMany({ _id: { $in: chat.messages }, sender: userId });
+    res.status(200).send()
+  } catch (error) {
+    next(error);
+  }
 });
 
 //================//
-// OFFERS
+// Offers
 //================//
 
 router.get('/offers', isAuthenticated, async (req, res, next) => {
     const userId = req.payload._id
     try {
-      const user = await User.findById(userId).populate('offers')
-      res.status(200).json(user.offers);
+      const offers = await Offer.find({ creator: userId })
+      res.status(200).json(offers);
     } catch (error) {
       next(error);
     }
@@ -138,20 +134,17 @@ router.get('/offers', isAuthenticated, async (req, res, next) => {
   
 router.post('/offers', isAuthenticated, async (req, res, next) => {
     const userId = req.payload._id
+    const { name, language, level, locationType, location, weekdays, timeslots, duration, classType, maxGroupSize, price} = req.body;
+    
+    // Check that all fields are provided
+    if ([name,language,level,locationType,classType,weekdays,timeslots,duration,price].some(field => !field)) {
+      res.status(400).json({ message: "Some mandatory fields are missing. Please try again" });
+      return;
+    }
+
     try {
-      const userDB = await User.findById(userId);
-      const { name, language, level, locationType, location, weekdays, timeslots, duration, classType, maxGroupSize, price} = req.body;
-    
-      // Check that all fields are provided
-      if ([name,language,level,locationType,classType,weekdays,timeslots,duration,price].some(field => !field)) {
-        res.status(400).json({ message: "Some mandatory fields are missing. Please try again" });
-        return;
-      }
-    
-      const offer = await Offer.create({ name, language, level, locationType, location, weekdays, timeslots, 
+      const offer = await Offer.create({ creator: userId, name, language, level, locationType, location, weekdays, timeslots, 
         duration, classType, maxGroupSize, price});
-      userDB.offers.push(offer._id);
-      await userDB.save();
       res.status(200).send(offer);
     } catch (error) {
       next(error);
@@ -191,7 +184,7 @@ router.delete('/offers/:offerId', isAuthenticated, async (req, res, next) => {
 });
 
 //====================//
-// CLASSES / CALENDAR
+// Clasess / Calendar
 //====================//
 
 router.get('/classes', isAuthenticated, async (req, res, next) => {

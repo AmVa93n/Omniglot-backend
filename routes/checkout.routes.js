@@ -21,10 +21,9 @@ const domain = process.env.LOCAL || `https://omniglot-znxc.onrender.com`
 router.get('/offers/:offerId', isAuthenticated, async (req, res, next) => {
   const offerId = req.params.offerId
   try {
-    const offer = await Offer.findById(offerId)
-    const teacher = await User.findOne({ offers: offerId })
+    const offer = await Offer.findById(offerId).populate('creator', 'username profilePic')
     offer.timeslots.sort()
-    res.status(200).json({ stripePublicKey: process.env.STRIPE_PUBLIC_KEY, offer, teacher });
+    res.status(200).json({ stripePublicKey: process.env.STRIPE_PUBLIC_KEY, offer });
   } catch (error) {
     next(error)
   }
