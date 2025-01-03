@@ -12,75 +12,36 @@ const Notification = require('../models/Notification.model');
 
 io.on('connection', (socket) => {
 
-  socket.on('join', async (userId) => {
-    const userfromDB = await User.findById(userId)
-    socket.userId = userId;
-    socket.join(userId);
-    console.log(`${userfromDB.username} joined their room`);
-
-    try {
-      const Chats = await Chat.find({ participants: { $in: [userId] } })
-      .populate({
-        path: 'messages',
-        options: { sort: { timestamp: 1 } }
-      })
-      .populate({
-        path: 'participants',
-        select: 'username profilePic professional'
-      })
-      .sort({ lastMessageTimestamp: -1 })
-      .lean()
-      .exec();
-      socket.emit('init', Chats);
-    } catch (err) {
-      console.error(err);
+  socket.on('online', async (user) => {
+    socket.username = user.username;
+    socket.join(user._id);
+    console.log(`${user.username} is online`);
+    const chats = await Chat.find({ participants: user._id })
+    for (let chat of chats) {
+      socket.join(chat._id);
+      console.log(`${user.username} joined chat ${chat._id}`);
     }
   });
 
-  socket.on('join chat', async (chatId) => {
-    socket.join(chatId);
-    console.log(`${socket.userId} joined chat ${chatId}`);
-  });
+  socket.on('message', async (msg) => {
+    const message = await Message.create(msg);
+    io.to(msg.chatId).emit('newMessage', message);
 
-  socket.on('private message', async (msg) => {
-    const chat = await Chat.findById(msg.chatId)
-    const newMessage = new Message({
-      sender: msg.sender,
-      recipient: msg.recipient,
-      message: msg.message,
-    });
-
-    try {
-      await newMessage.save();
-      chat.messages.push(newMessage._id);
-      chat.lastMessageTimestamp = newMessage.timestamp;
-      await chat.save();
-      io.to(msg.chatId).emit('private message', newMessage); // Emit to chat's room
-      
-      try {
-        const rooms = io.sockets.adapter.rooms
-        const room = rooms.get(msg.chatId)
-        if (room.size === 1) {
-          const existingNotif = await Notification.findOne({ source: msg.sender, target: msg.recipient, type: 'message', read: false }) // anti spam
-          if (!existingNotif) {
-            const notif = await Notification.create({ source: msg.sender, target: msg.recipient, type: 'message' })
-            await notif.populate('source')
-            const notifObject = notif.toObject();
-            notifObject.timeDiff = formatDistanceToNow(new Date(notif.createdAt), { addSuffix: true })
-            io.to(msg.recipient).emit('notification', notifObject)
-          }
-        }
-      } catch (error) {
-        console.error('Error accessing rooms:', error);
+    const rooms = io.sockets.adapter.rooms
+    const room = rooms.get(msg.chatId)
+    if (room.size === 1) {
+      const existingNotif = await Notification.findOne({ source: msg.sender, target: msg.recipient, type: 'message', read: false }) // anti spam
+      if (!existingNotif) {
+        const notification = await Notification.create({ source: msg.sender, target: msg.recipient, type: 'message' }).lean()
+        await notification.populate('source').lean()
+        notification.timeDiff = formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })
+        io.to(msg.recipient).emit('newNotification', notification)
       }
-
-    } catch (err) {
-      console.error(err);
     }
   });
 
   socket.on('disconnect', () => {
-    console.log('A user disconnected');
+    console.log(`${socket.username} disconnected`);
   });
 
 });

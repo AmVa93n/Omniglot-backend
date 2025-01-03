@@ -80,7 +80,10 @@ router.put('/profile', fileUploader.single('profilePic'), isAuthenticated, async
 router.get('/inbox', isAuthenticated, async (req, res, next) => {
     const userId = req.payload._id
     try {
-      const chats = await Chat.find({ participants: userId }).populate('participants messages')
+      const chats = await Chat.find({ participants: userId }).populate('participants').lean()
+      for (let chat of chats) {
+        chat.messages = await Message.find({ chat: chat._id }).populate('sender').lean()
+      }
       res.status(200).json(chats);
     } catch (error) {
       next(error);
@@ -99,7 +102,8 @@ router.post('/inbox', isAuthenticated, async (req, res, next) => {
         res.status(200).json(existingChat);
         return
       }
-      const newChat = await Chat.create({participants: [userId, targetUserId], messages: []});
+      const newChat = await Chat.create({participants: [userId, targetUserId], messages: []})
+      await newChat.populate('participants', 'username profilePic professional')
       res.status(200).json(newChat);
     } catch (error) {
       next(error);

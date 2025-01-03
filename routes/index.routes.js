@@ -36,7 +36,7 @@ router.get("/langStats", async (req, res, next) => {
         // Render the home page with statistics
         res.status(200).json({ teach: top10teach, learn: top10learn });
     } catch (error) {
-        next(err); // In this case, we send error handling to the error handling middleware.
+        next(error); // In this case, we send error handling to the error handling middleware.
     }
 });
 
@@ -117,15 +117,14 @@ router.get("/match/partners", isAuthenticated, async (req, res, next) => {
   const user_learn = user.lang_learn;
 
   try {
-    let matches = await User.find({ lang_teach: { $in: user_learn }, lang_learn: { $in: user_teach } });
-    matches = matches.filter(match => !match.private); // Filter private profiles
+    const matches = await User.find({ lang_teach: { $in: user_learn }, lang_learn: { $in: user_teach }, private: false }).lean();
     for (let match of matches) { // Filter irrelevant languages
       match.lang_teach = match.lang_teach.filter(lang => user_learn.includes(lang));
       match.lang_learn = match.lang_learn.filter(lang => user_teach.includes(lang));
     }
     res.status(200).json(matches);
   } catch (error) {
-    next(err);
+    next(error);
   }
 });
 
@@ -136,12 +135,13 @@ router.get("/match/teachers", isAuthenticated, async (req, res, next) => {
   const user_learn = user.lang_learn;
 
   try {
-    let matches = await User.find({ lang_teach: { $in: user_learn }, professional: true }).populate('offers').lean();
-    for (let match of matches) { // Filter irrelevant languages
-      match.lang_teach = match.lang_teach.filter(lang => user_learn.includes(lang));
+    const teachers = await User.find({ lang_teach: { $in: user_learn }, professional: true }).lean();
+    for (let teacher of teachers) { // Filter irrelevant languages
+      teacher.lang_teach = teacher.lang_teach.filter(lang => user_learn.includes(lang));
+      teacher.offers = await Offer.find({ creator: teacher._id });
     }
     // Filter teachers with at least one offer of a language that the user wants to learn
-    matches = matches.filter(match => match.offers.some(offer => user_learn.includes(offer.language)));
+    const matches = teachers.filter(teacher => teacher.offers.some(offer => user_learn.includes(offer.language)));
     // Calculate average review scores for each teacher
     for (let match of matches) {
       let reviews = await Review.find({ subject: match._id });
@@ -151,7 +151,7 @@ router.get("/match/teachers", isAuthenticated, async (req, res, next) => {
     }
     res.status(200).json(matches);
   } catch (error) {
-    next(err);
+    next(error);
   }
 });
 
@@ -168,7 +168,7 @@ router.get("/teachers/:langId", async (req, res, next) => {
     const teachers = await User.find({ lang_teach: langId});
     res.status(200).json(teachers);
   } catch (error) {
-    next(err);
+    next(error);
   }
 });
 
@@ -181,7 +181,7 @@ router.get("/learners/:langId", async (req, res, next) => {
     const learners = await User.find({ lang_learn: langId });
     res.status(200).json(learners);
   } catch (error) {
-    next(err);
+    next(error);
   }
 });
 

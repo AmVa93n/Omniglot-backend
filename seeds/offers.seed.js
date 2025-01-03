@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const User = require('../models/User.model');
 const Offer = require('../models/Offer.model');
 require("dotenv").config();
-const MONGO_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/ironhack-project2';
+const MONGO_URI = process.env.MONGODB_URI
 
 const locTypes = ['online','at-student','at-teacher']
 const classTypes = ['private','group']
@@ -32,7 +32,8 @@ async function seedDatabase() {
               timeslots.push(`${hour}:${minute}`)
             }
 
-            let offer = {
+            const offer = {
+                creator: user._id,
                 name: "my amazing offer "+i,
                 language: randomElement(user.lang_teach),
                 level: randomElement(levels),
@@ -44,9 +45,7 @@ async function seedDatabase() {
                 duration: randomElement(durations),
                 price: getRandomNumber(10,100),
             }
-            let offerDB = await Offer.create(offer);
-            user.offers.push(offerDB._id)
-            await user.save()
+            await Offer.create(offer);
         }
     }
 
