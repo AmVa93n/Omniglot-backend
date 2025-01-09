@@ -20,11 +20,11 @@ router.get("/langStats", async (req, res, next) => {
         // Collect statistics for each language
         for (const lang of langList) {
           teach.push({
-              name: lang,
+              code: lang,
               amount: await User.countDocuments({ lang_teach: lang }),
           });
           learn.push({
-              name: lang,
+              code: lang,
               amount: await User.countDocuments({ lang_learn: lang }),
           });
         }
@@ -40,7 +40,34 @@ router.get("/langStats", async (req, res, next) => {
     }
 });
 
-// GET another user profile
+router.get("/users", async (req, res, next) => {
+  const { learn, teach, professional } = req.query;
+  // Build the query object dynamically based on the presence of query parameters
+  const query = {};
+  if (learn) query.lang_learn = learn;
+  if (teach) query.lang_teach = teach;
+  if (professional) query.professional = professional;
+
+  try {
+      const searchResults = await User.find({...query, private: false}).lean();
+
+      if (query.professional) {
+        for (let teacher of searchResults) {
+          teacher.offers = await Offer.find({ creator: teacher._id });
+          const reviews = await Review.find({ subject: teacher._id });
+          const avg = reviews.map(r => r.rating).reduce((acc, num) => acc + num, 0) / reviews.length;
+          teacher.ratingAvg = avg.toFixed(1);
+          teacher.reviewsNr = reviews.length;
+        }
+      }
+
+      res.status(200).json(searchResults);
+    
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/users/:userId", async (req, res, next) => {
   const viewedUserId = decodeURIComponent(req.params.userId);
 
@@ -66,7 +93,6 @@ router.get("/users/:userId", async (req, res, next) => {
 // NOTIFICATIONS
 //================//
 
-// Get existing notifications
 router.get("/notifications", isAuthenticated, async (req, res, next) => {
   const userId = req.payload._id
   try {
@@ -83,7 +109,6 @@ router.get("/notifications", isAuthenticated, async (req, res, next) => {
   }
 });
 
-// Mark a notification as read
 router.put("/notification/:notificationId", async (req, res, next) => {
   const notifId = req.params.notificationId;
   try {
@@ -94,7 +119,6 @@ router.put("/notification/:notificationId", async (req, res, next) => {
   }
 });
 
-// Delete a notification
 router.delete("/notification/:notificationId", async (req, res, next) => {
   const notifId = req.params.notificationId;
   try {
@@ -102,86 +126,6 @@ router.delete("/notification/:notificationId", async (req, res, next) => {
     res.status(200).send();
   } catch (error) {
     next(err);
-  }
-});
-
-//================//
-// FIND MATCHES
-//================//
-
-// Find users who match based on the languages they teach and learn
-router.get("/match/partners", isAuthenticated, async (req, res, next) => {
-  const userId = req.payload._id
-  const user = await User.findById(userId);
-  const user_teach = user.lang_teach;
-  const user_learn = user.lang_learn;
-
-  try {
-    const matches = await User.find({ lang_teach: { $in: user_learn }, lang_learn: { $in: user_teach }, private: false }).lean();
-    for (let match of matches) { // Filter irrelevant languages
-      match.lang_teach = match.lang_teach.filter(lang => user_learn.includes(lang));
-      match.lang_learn = match.lang_learn.filter(lang => user_teach.includes(lang));
-    }
-    res.status(200).json(matches);
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Find teachers who match based on the languages the user wants to learn
-router.get("/match/teachers", isAuthenticated, async (req, res, next) => {
-  const userId = req.payload._id
-  const user = await User.findById(userId);
-  const user_learn = user.lang_learn;
-
-  try {
-    const teachers = await User.find({ lang_teach: { $in: user_learn }, professional: true }).lean();
-    for (let teacher of teachers) { // Filter irrelevant languages
-      teacher.lang_teach = teacher.lang_teach.filter(lang => user_learn.includes(lang));
-      teacher.offers = await Offer.find({ creator: teacher._id });
-    }
-    // Filter teachers with at least one offer of a language that the user wants to learn
-    const matches = teachers.filter(teacher => teacher.offers.some(offer => user_learn.includes(offer.language)));
-    // Calculate average review scores for each teacher
-    for (let match of matches) {
-      let reviews = await Review.find({ subject: match._id });
-      let avg = reviews.map(r => r.rating).reduce((acc, num) => acc + num, 0) / reviews.length;
-      match.ratingAvg = avg.toFixed(1);
-      match.reviewsNr = reviews.length;
-    }
-    res.status(200).json(matches);
-  } catch (error) {
-    next(error);
-  }
-});
-
-//==============================//
-// Dynamic routes for languages
-//==============================//
-
-// Route to get teachers of a specific language
-router.get("/teachers/:langId", async (req, res, next) => {
-  const { langId } = req.params;
-
-  try {
-    // Find teachers for the specified language
-    const teachers = await User.find({ lang_teach: langId});
-    res.status(200).json(teachers);
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Route to get learners of a specific language
-router.get("/learners/:langId", async (req, res, next) => {
-  const { langId } = req.params;
-
-  try {
-    // Find learners for the specified language
-    const learners = await User.find({ lang_learn: langId });
-    res.status(200).json(learners);
-  } catch (error) {
-    next(error);
   }
 });
 
