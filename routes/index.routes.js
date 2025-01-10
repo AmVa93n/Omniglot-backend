@@ -4,6 +4,8 @@ const Offer = require('../models/Offer.model');
 const Review = require('../models/Review.model');
 const User = require('../models/User.model');
 const Notification = require('../models/Notification.model');
+const Chat = require('../models/Chat.model');
+const Message = require('../models/Message.model');
 const Deck = require('../models/Deck.model');
 const { formatDistanceToNow } = require('date-fns');
 
@@ -90,7 +92,7 @@ router.get("/users/:userId", async (req, res, next) => {
 });
 
 //================//
-// NOTIFICATIONS
+// Notifications
 //================//
 
 router.get("/notifications", isAuthenticated, async (req, res, next) => {
@@ -109,7 +111,7 @@ router.get("/notifications", isAuthenticated, async (req, res, next) => {
   }
 });
 
-router.put("/notification/:notificationId", async (req, res, next) => {
+router.put("/notification/:notificationId", isAuthenticated, async (req, res, next) => {
   const notifId = req.params.notificationId;
   try {
     await Notification.findByIdAndUpdate(notifId, { read: true });
@@ -119,7 +121,7 @@ router.put("/notification/:notificationId", async (req, res, next) => {
   }
 });
 
-router.delete("/notification/:notificationId", async (req, res, next) => {
+router.delete("/notification/:notificationId", isAuthenticated, async (req, res, next) => {
   const notifId = req.params.notificationId;
   try {
     await Notification.findByIdAndDelete(notifId);
@@ -127,6 +129,55 @@ router.delete("/notification/:notificationId", async (req, res, next) => {
   } catch (error) {
     next(err);
   }
+});
+
+//================//
+// Messaging
+//================//
+
+router.get('/inbox', isAuthenticated, async (req, res, next) => {
+  const userId = req.payload._id
+  try {
+    const chats = await Chat.find({ participants: userId }).populate('participants').lean()
+    for (let chat of chats) {
+      chat.messages = await Message.find({ chat: chat._id }).lean()
+    }
+    res.status(200).json(chats);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/inbox', isAuthenticated, async (req, res, next) => {
+  const { targetUserId } = req.body;
+  const userId = req.payload._id
+  try {
+    // Check if a chat already exists
+    const existingChat = await Chat.findOne({
+      participants: { $all: [userId, targetUserId] }
+    });
+    if (existingChat) {
+      res.status(200).json(existingChat);
+      return
+    }
+    const newChat = await Chat.create({participants: [userId, targetUserId], messages: []})
+    await newChat.populate('participants', 'username profilePic professional')
+    res.status(200).json(newChat);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete("/inbox/:chatId", isAuthenticated, async (req, res, next) => {
+const userId = req.payload._id;
+const chatId = req.params.chatId;
+try {
+  const chat = await Chat.findById(chatId)
+  await Message.deleteMany({ _id: { $in: chat.messages }, sender: userId });
+  res.status(200).send()
+} catch (error) {
+  next(error);
+}
 });
 
 module.exports = router;
