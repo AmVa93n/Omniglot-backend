@@ -143,17 +143,17 @@ router.delete('/offers/:offerId', isAuthenticated, async (req, res, next) => {
 router.get('/classes', isAuthenticated, async (req, res, next) => {
     const userId = req.payload._id
     try {
-      const classes = await Class.find({ student: userId }).populate('teacher')
-      const upcomingClasses = []
-      const pastClasses = []
+      const classes = await Class.find({ student: userId }).populate('teacher').lean()
+      classes.sort((a, b) => b.date.localeCompare(a.date))
       for (let cl of classes) {
         const [year, month, day] = cl.date.split('-').map(Number);
-        const inputDate = new Date(year, month - 1, day);
+        const date = new Date(year, month - 1, day);
         const currentDate = new Date();
-        if (inputDate < currentDate) pastClasses.push(cl)
-        else upcomingClasses.push(cl)
+        if (date < currentDate) {
+          cl.isPast = true
+        }
       }
-      res.status(200).json({upcomingClasses, pastClasses});
+      res.status(200).json(classes);
     } catch (error) {
       next(error);
     }
