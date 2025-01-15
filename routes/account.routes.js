@@ -207,7 +207,7 @@ router.put('/classes/:classId/reschedule', isAuthenticated, async (req, res, nex
   const userId = req.payload._id
   const classId = req.params.classId
   try {
-    const updatedClass = await Class.findById(classId)
+    const updatedClass = await Class.findById(classId).populate('teacher student', 'username profilePic')
     const { date, timeslot } = req.body
     updatedClass.reschedule = {new_date: date, new_timeslot: timeslot, status: 'pending', initiator: userId}
     await updatedClass.save()
@@ -223,7 +223,20 @@ router.put('/classes/:classId/reschedule', isAuthenticated, async (req, res, nex
     }
 
     await Notification.create({ source: userId, target: notifTarget, type: notifType})
-    res.status(200).json(updatedClass.reschedule)
+    res.status(200).json(updatedClass)
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put('/classes/:classId/reschedule/withdraw', isAuthenticated, async (req, res, next) => {
+  const classId = req.params.classId
+  try {
+    const updatedClass = await Class.findById(classId).populate('teacher student', 'username profilePic')
+    updatedClass.reschedule = {}
+    await updatedClass.save()
+    
+    res.status(200).json(updatedClass)
   } catch (error) {
     next(error);
   }
@@ -233,7 +246,7 @@ router.put('/classes/:classId/reschedule/accept', isAuthenticated, async (req, r
   const userId = req.payload._id
   const classId = req.params.classId
   try {
-    const updatedClass = await Class.findById(classId)
+    const updatedClass = await Class.findById(classId).populate('teacher student', 'username profilePic')
     updatedClass.reschedule.status = "accepted"
     updatedClass.date = updatedClass.reschedule.new_date
     updatedClass.timeslot = updatedClass.reschedule.new_timeslot
@@ -259,7 +272,7 @@ router.put('/classes/:classId/reschedule/decline', isAuthenticated, async (req, 
   const userId = req.payload._id
   const classId = req.params.classId
   try {
-    const updatedClass = await Class.findById(classId)
+    const updatedClass = await Class.findById(classId).populate('teacher student', 'username profilePic')
     updatedClass.reschedule.status = "declined"
     await updatedClass.save()
     let notifTarget, notifType
@@ -317,9 +330,9 @@ router.post('/reviews/:classId', isAuthenticated, async (req, res, next) => {
 router.get('/decks', isAuthenticated, async (req, res, next) => {
   const userId = req.payload._id
   try {
-    const decks = await Deck.find({ creator: userId }).populate('cards').lean()
+    const decks = await Deck.find({ creator: userId }).lean()
     for (let deck of decks) {
-      deck.mastered = deck.cards.filter(card => card.priority === -10)
+      deck.cards = await Flashcard.find({ deck: deck._id }).lean()
     }
     res.status(200).json(decks);
   } catch (error) {
@@ -329,34 +342,12 @@ router.get('/decks', isAuthenticated, async (req, res, next) => {
 
 router.post('/decks', isAuthenticated, async (req, res, next) => {
   const userId = req.payload._id
+  console.log(req.body)
   const { language, level, topic } = req.body;
 
-  // Check that all fields are provided
-  if ([language,level,topic].some(field => !field)) {
-    res.status(400).json({ message: "Some mandatory fields are missing. Please try again" });
-    return;
-  }
-
-  const cardsFront = []
-  const cardsBack = []
-  
-  for (let key of Object.keys(req.body)) {
-    if (!key.includes("card")) continue
-    if (key.includes("front")) cardsFront.push(req.body[key])
-    if (key.includes("back")) cardsBack.push(req.body[key])
-  }
-  const cards = []
-  for (let i=0; i < cardsFront.length; i++) {
-    if (!cardsFront[i] || !cardsBack[i]) continue
-    cards.push({front: cardsFront[i], back: cardsBack[i]})
-  }
-
   try {
-    const cardsDB = await Flashcard.create(cards)
-    const cardsIds = cardsDB.map(card => card._id)
-
-    const deck = await Deck.create({ creator: userId, language, level, topic, cards: cardsIds });
-    res.status(200).send(deck);
+    const deck = await Deck.create({ creator: userId, language, level, topic });
+    res.status(200).json(deck);
   } catch (error) {
     next(error);
   }
@@ -366,36 +357,10 @@ router.put('/decks/:deckId', isAuthenticated, async (req, res, next) => {
   const deckId = req.params.deckId
   const { language, level, topic } = req.body;
 
-  // Check that all fields are provided
-  if ([language,level,topic].some(field => !field)) {
-    res.status(400).render("account/decks/edit", {user, errorMessage: "Some mandatory fields are missing. Please try again"});
-    return;
-  }
-
-  const cardsFront = []
-  const cardsBack = []
-  const cardsPriority = []
-  
-  for (let key of Object.keys(req.body)) {
-    if (!key.includes("card")) continue
-    if (key.includes("front")) cardsFront.push(req.body[key])
-    if (key.includes("back")) cardsBack.push(req.body[key])
-    if (key.includes("priority")) cardsPriority.push(req.body[key])
-  }
-  const cards = []
-  for (let i=0; i < cardsFront.length; i++) {
-    if (!cardsFront[i] || !cardsBack[i]) continue
-    cards.push({front: cardsFront[i], back: cardsBack[i]})
-  }
-
   try {
-    const deck = await Deck.findById(deckId)
-    await Flashcard.deleteMany({ _id: { $in: deck.cards } })
-    const cardsDB = await Flashcard.create(cards)
-    const cardsIds = cardsDB.map(card => card._id)
-
-    await Deck.updateOne(deck, { language, level, topic, cards: cardsIds });
-    res.redirect('/account/decks')
+    const updatedDeck = await Deck.findByIdAndUpdate(deckId, { language, level, topic }, { new: true }).lean()
+    updatedDeck.cards = await Flashcard.find({ deck: deckId }).lean()
+    res.status(200).json(updatedDeck);
   } catch (error) {
     next(error);
   }
@@ -404,8 +369,7 @@ router.put('/decks/:deckId', isAuthenticated, async (req, res, next) => {
 router.delete('/decks/:deckId', isAuthenticated, async (req, res, next) => {
   const deckId = req.params.deckId
   try {
-    const deck = await Deck.findById(deckId)
-    await Flashcard.deleteMany({ _id: { $in: deck.cards } })
+    await Flashcard.deleteMany({ deck: deckId })
     await Deck.findByIdAndDelete(deckId)
     res.status(200).send()
   } catch (error) {
@@ -431,15 +395,46 @@ router.post('/decks/:deckId/clone', isAuthenticated, async (req, res, next) => {
   const userId = req.payload._id
   const deckId = req.params.deckId
   try {
-    const deck = await Deck.findById(deckId).populate('cards')
-    const cardsData = []
-    deck.cards.forEach(card => {
-      cardsData.push({front: card.front, back: card.back, priority: 0})
-    })
-    const clonedCards = await Flashcard.create(cardsData)
-    await Deck.create({ creator: userId, language: deck.language, level: deck.level, 
-      topic: deck.topic + " (cloned)", cards: clonedCards })
+    const deck = await Deck.findById(deckId)
+    const clonedDeck = await Deck.create({ creator: userId, language: deck.language, level: deck.level, topic: deck.topic + " (cloned)" })
+    const cards = await Flashcard.find({ deck: deckId }).lean()
+    const cardsData = cards.map(card => ({ front: card.front, back: card.back, priority: 0, deck: clonedDeck }))
+    await Flashcard.create(cardsData)
+    
     await Notification.create({ source: userId, target: deck.creator, type: 'clone'})
+    res.status(200).send()
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/flashcards/:deckId', isAuthenticated, async (req, res, next) => {
+  const deckId = req.params.deckId
+  const { front, back } = req.body
+  try {
+    const newCard = await Flashcard.create({ front, back, priority: 0 })
+    await Deck.findByIdAndUpdate(deckId, { $push: { cards: newCard } })
+    res.status(200).json(newCard);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put('/flashcards/:cardId', isAuthenticated, async (req, res, next) => {
+  const cardId = req.params.cardId
+  const { front, back } = req.body
+  try {
+    const updatedCard = await Flashcard.findByIdAndUpdate(cardId, { front, back }, { new: true })
+    res.status(200).json(updatedCard);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/flashcards/:cardId', isAuthenticated, async (req, res, next) => {
+  const cardId = req.params.cardId
+  try {
+    await Flashcard.findByIdAndDelete(cardId)
     res.status(200).send()
   } catch (error) {
     next(error);
