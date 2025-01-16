@@ -16,8 +16,6 @@
     "dotenv": "^16.4.7",
     "express": "^4.19.2",
     "express-jwt": "^8.4.1",
-    "fullcalendar": "^6.1.15",
-    "google-auth-library": "^9.15.0",
     "jsonwebtoken": "^9.0.2",
     "moment": "^2.30.1",
     "mongoose": "^8.5.1",

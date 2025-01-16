@@ -42,20 +42,19 @@ router.delete("/profile", isAuthenticated, async (req, res, next) => {
   
 router.put('/profile', fileUploader.single('profilePic'), isAuthenticated, async (req, res, next) => {
     const userId = req.payload._id
-    const { username, email, gender, birthdate, country, lang_teach, lang_learn, professional, private, pfp } = req.body;
-    let stripeAccountId = req.body.stripeAccountId || null
-    const newProfilePic = req.file ? req.file.path : pfp;
-    const isPrivate = !!private
-    const isProfessional = !!professional
+    const { username, email, gender, birthdate, country, lang_teach, lang_learn, professional, private } = req.body;
+    const profilePic = req.file ? req.file.path : null;
 
-    if (isProfessional && !stripeAccountId) {
+    const hasStripeAccount = await User.findById(userId).then(user => user.stripeAccountId);
+
+    if (professional && !hasStripeAccount) {
       try {
         const stripeAccount = await stripe.accounts.create({
           country: 'US',
           email: email,
           type: 'standard',
         });
-        stripeAccountId = stripeAccount.id
+        
       } catch (error) {
         console.error("An error occurred when calling the Stripe API to create an account", error);
       }
@@ -63,8 +62,7 @@ router.put('/profile', fileUploader.single('profilePic'), isAuthenticated, async
   
     try {
       const updatedUser = await User.findByIdAndUpdate(userId, { username, email, gender, birthdate, country, 
-        lang_teach, lang_learn, professional: isProfessional, private: isPrivate, profilePic: newProfilePic,
-        stripeAccountId }, { new: true });
+        lang_teach, lang_learn, professional, private, profilePic }, { new: true });
       res.status(200).json(updatedUser);
     } catch (error) {
         next(error);
@@ -88,12 +86,6 @@ router.get('/offers', isAuthenticated, async (req, res, next) => {
 router.post('/offers', isAuthenticated, async (req, res, next) => {
     const userId = req.payload._id
     const { name, language, level, locationType, location, weekdays, timeslots, duration, classType, maxGroupSize, price} = req.body;
-    
-    // Check that all fields are provided
-    if ([name,language,level,locationType,classType,weekdays,timeslots,duration,price].some(field => !field)) {
-      res.status(400).json({ message: "Some mandatory fields are missing. Please try again" });
-      return;
-    }
 
     try {
       const offer = await Offer.create({ creator: userId, name, language, level, locationType, location, weekdays, timeslots, 
@@ -105,25 +97,16 @@ router.post('/offers', isAuthenticated, async (req, res, next) => {
 });
 
 router.put('/offers/:offerId', isAuthenticated, async (req, res, next) => {
-    const { name, language, level, locationType, weekdays, timeslots, duration, classType, price } = req.body;
-    let { location, maxGroupSize } = req.body;
-    if (!location) location = null
-    if (!maxGroupSize) maxGroupSize = null
-    const offerId = req.params.offerId
-  
-    // Check that all fields are provided
-    if ([name,language,level,locationType,classType,weekdays,timeslots,duration,price].some(field => !field)) {
-        res.status(400).json({message: "Some mandatory fields are missing. Please try again"});
-        return;
-    }
-  
-    try {
-      const updatedOffer = await Offer.findByIdAndUpdate(offerId, {  name, language, level, locationType, location, weekdays, timeslots, 
-        duration, classType, maxGroupSize, price });
-      res.status(200).send(updatedOffer);
-    } catch (err) {
-      next(err);
-    }
+  const { name, language, level, locationType, weekdays, timeslots, duration, classType, price, location, maxGroupSize } = req.body;
+  const offerId = req.params.offerId
+
+  try {
+    const updatedOffer = await Offer.findByIdAndUpdate(offerId, {  name, language, level, locationType, location, weekdays, timeslots, 
+      duration, classType, maxGroupSize, price });
+    res.status(200).send(updatedOffer);
+  } catch (err) {
+    next(err);
+  }
 });
   
 router.delete('/offers/:offerId', isAuthenticated, async (req, res, next) => {
@@ -411,9 +394,9 @@ router.post('/decks/:deckId/clone', isAuthenticated, async (req, res, next) => {
 router.post('/flashcards/:deckId', isAuthenticated, async (req, res, next) => {
   const deckId = req.params.deckId
   const { front, back } = req.body
+  
   try {
-    const newCard = await Flashcard.create({ front, back, priority: 0 })
-    await Deck.findByIdAndUpdate(deckId, { $push: { cards: newCard } })
+    const newCard = await Flashcard.create({ deck: deckId, front, back, priority: 0 })
     res.status(200).json(newCard);
   } catch (error) {
     next(error);
@@ -442,19 +425,19 @@ router.delete('/flashcards/:cardId', isAuthenticated, async (req, res, next) => 
 });
 
 //================//
-// Wallet
+// Earnings
 //================//
 
-router.get('/wallet', isAuthenticated, async (req, res, next) => {
+router.get('/earnings', isAuthenticated, async (req, res, next) => {
   const userId = req.payload._id
   try {
-    const userDB = await User.findById(userId)
-    const accountId = userDB.stripeAccountId
+    const user = await User.findById(userId)
+    const accountId = user.stripeAccountId
 
     const transactions = await stripe.balanceTransactions.list({
-      stripeAccount: accountId,
-      limit: 100 // Adjust the limit as needed
+      stripeAccount: accountId
     });
+
     transactions.data.reverse()
     for (let i = 0; i < transactions.data.length; i++) {
       const trans = transactions.data[i]
@@ -466,7 +449,7 @@ router.get('/wallet', isAuthenticated, async (req, res, next) => {
     }
     transactions.data.reverse()
     
-    res.status(200).json({ transactions: transactions.data, accountId })
+    res.status(200).json(transactions.data)
   } catch (error) {
     next(error);
   }
