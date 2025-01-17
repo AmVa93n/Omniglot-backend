@@ -438,16 +438,18 @@ router.get('/earnings', isAuthenticated, async (req, res, next) => {
       stripeAccount: accountId
     });
 
-    transactions.data.reverse()
-    for (let i = 0; i < transactions.data.length; i++) {
-      const trans = transactions.data[i]
-      trans.amount = trans.amount / 100
-      trans.currency = '€'
-      trans.balance = i > 0 ? Number(transactions.data[i-1].balance) + trans.amount : trans.amount
-      trans.balance = trans.balance.toFixed(2)
-      trans.date = moment.unix(trans.created).format('DD-MM-YYYY HH:mm:ss') // Format the Unix timestamp
+    for (const transaction of transactions.data) {
+      transaction.amount = transaction.amount / 100
+      transaction.currency = '€'
+      transaction.date = moment.unix(transaction.created).format('DD-MM-YYYY')
+      transaction.time = moment.unix(transaction.created).format('HH:mm:ss')
+      if (transaction.type === 'payment') {
+        //const charge = await stripe.charges.retrieve(transaction.source)
+        //transaction.customer = await stripe.customers.retrieve(charge.customer)
+        //const offerId = charge.metadata.offerId
+        //transaction.offer = await Offer.findById(offerId).lean()
+      }
     }
-    transactions.data.reverse()
     
     res.status(200).json(transactions.data)
   } catch (error) {
