@@ -2,7 +2,6 @@ const express = require("express");
 const router = express.Router();
 
 // Require the models in order to interact with the database
-const User = require("../models/User.model");
 const Offer = require("../models/Offer.model");
 const Class = require("../models/Class.model");
 const Notification = require("../models/Notification.model");
@@ -21,42 +20,30 @@ router.get('/:offerId', isAuthenticated, async (req, res, next) => {
   try {
     const offer = await Offer.findById(offerId).populate('creator', 'username profilePic')
     offer.timeslots.sort()
-    res.status(200).json(offer);
-  } catch (error) {
-    next(error)
-  }
-});
-
-router.post('/:offerId', isAuthenticated, async (req, res, next) => {
-  const offerId = req.params.offerId
-  try {
-    const offer = await Offer.findById(offerId)
-    const price = offer.price
 
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: price * 100, // amount is in cents
+      amount: offer.price * 100, // amount is in cents
       currency: 'eur',
       payment_method_types: ['card'],
     });
-    res.json({client_secret: paymentIntent.client_secret});
+
+    res.status(200).json({offer, clientSecret: paymentIntent.client_secret});
   } catch (error) {
     next(error)
   }
 });
 
-router.post('/:offerId/confirm', isAuthenticated, async (req, res, next) => {
+router.post('/:offerId/', isAuthenticated, async (req, res, next) => {
   const userId = req.payload._id
   const offerId = req.params.offerId
   const { date, timeslot } = req.body
-  const [day, month, year] = date.split('-');
-  const formattedDate = `${year}-${month}-${day}`;
 
   try {
     const offer = await Offer.findById(offerId)
     const booking = await Class.create({ 
       student: userId,
       teacher: offer.creator,
-      date: formattedDate,
+      date,
       timeslot, 
       language: offer.language,
       level: offer.level,
