@@ -7,6 +7,7 @@ const Notification = require('../models/Notification.model');
 const Chat = require('../models/Chat.model');
 const Message = require('../models/Message.model');
 const Deck = require('../models/Deck.model');
+const Flashcard = require('../models/Flashcard.model');
 const { formatDistanceToNow } = require('date-fns');
 
 // Middleware to check if the user is logged in
@@ -81,9 +82,12 @@ router.get("/users/:userId", async (req, res, next) => {
     }
     
     // Populate offers, reviews and decks for the viewed user
-    viewedUser.offers = await Offer.find({ creator: viewedUserId });
-    viewedUser.reviews = await Review.find({ subject: viewedUserId }).populate('author');
-    viewedUser.decks = await Deck.find({ creator: viewedUserId });
+    viewedUser.offers = await Offer.find({ creator: viewedUserId }).lean();
+    viewedUser.reviews = await Review.find({ subject: viewedUserId }).populate('author').lean();
+    viewedUser.decks = await Deck.find({ creator: viewedUserId }).lean();
+    for (let deck of viewedUser.decks) {
+      deck.cards = await Flashcard.find({ deck: deck._id });
+    }
 
     res.status(200).json(viewedUser);
   } catch (error) {

@@ -12,6 +12,7 @@ const Review = require("../models/Review.model");
 const Notification = require("../models/Notification.model");
 const Deck = require("../models/Deck.model");
 const Flashcard = require("../models/Flashcard.model");
+const Transaction = require("../models/Transaction.model");
 
 // Require necessary (isAuthenticated) middleware in order to control access to specific routes
 const { isAuthenticated } = require("../middleware/jwt.middleware.js");
@@ -431,27 +432,10 @@ router.delete('/flashcards/:cardId', isAuthenticated, async (req, res, next) => 
 router.get('/earnings', isAuthenticated, async (req, res, next) => {
   const userId = req.payload._id
   try {
-    const user = await User.findById(userId)
-    const accountId = user.stripeAccountId
-
-    const transactions = await stripe.balanceTransactions.list({
-      stripeAccount: accountId
-    });
-
-    for (const transaction of transactions.data) {
-      transaction.amount = transaction.amount / 100
-      transaction.currency = '€'
-      transaction.date = moment.unix(transaction.created).format('DD-MM-YYYY')
-      transaction.time = moment.unix(transaction.created).format('HH:mm:ss')
-      if (transaction.type === 'payment') {
-        //const charge = await stripe.charges.retrieve(transaction.source)
-        //transaction.customer = await stripe.customers.retrieve(charge.customer)
-        //const offerId = charge.metadata.offerId
-        //transaction.offer = await Offer.findById(offerId).lean()
-      }
-    }
+    const transactions = await Transaction.find({ teacher: userId })
+      .populate('student', 'username').populate('offer', 'name').lean()
     
-    res.status(200).json(transactions.data)
+    res.status(200).json(transactions.reverse());
   } catch (error) {
     next(error);
   }
