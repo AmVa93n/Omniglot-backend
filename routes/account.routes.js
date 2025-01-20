@@ -127,7 +127,7 @@ router.delete('/offers/:offerId', isAuthenticated, async (req, res, next) => {
 router.get('/classes', isAuthenticated, async (req, res, next) => {
     const userId = req.payload._id
     try {
-      const classes = await Class.find({ student: userId }).populate('teacher').lean()
+      const classes = await Class.find({ student: userId }).populate('teacher', 'username profilePic').lean()
       classes.sort((a, b) => b.date.localeCompare(a.date))
       for (let cl of classes) {
         const [year, month, day] = cl.date.split('-').map(Number);
@@ -146,7 +146,15 @@ router.get('/classes', isAuthenticated, async (req, res, next) => {
 router.get('/calendar', isAuthenticated, async (req, res, next) => {
   const userId = req.payload._id
   try {
-    const classes = await Class.find({ teacher: userId }).populate('student').lean()
+    const classes = await Class.find({ teacher: userId }).populate('student', 'username profilePic').lean()
+    for (let cl of classes) {
+      const [year, month, day] = cl.date.split('-').map(Number);
+      const date = new Date(year, month - 1, day);
+      const currentDate = new Date();
+      if (date < currentDate) {
+        cl.isPast = true
+      }
+    }
     
     res.status(200).json(classes);
   } catch (error) {
@@ -154,33 +162,10 @@ router.get('/calendar', isAuthenticated, async (req, res, next) => {
   }
 });
 
-router.get('/classes/:classId', isAuthenticated, async (req, res, next) => {
-    const classId = req.params.classId
-    try {
-      const classData = await Class.findById(classId).populate('teacher')
-      res.status(200).json(classData);
-    } catch (error) {
-      next(error);
-    }
-});
-
 router.delete('/classes/:classId', isAuthenticated, async (req, res, next) => {
-  const userId = req.payload._id
   const classId = req.params.classId
   try {
-    const classFromDB = await Class.findById(classId)
-    let notifTarget, notifType
-    if (classFromDB.student.toString() === userId) {
-      notifTarget = classFromDB.teacher
-      notifType = 'cancel-student'
-    }
-    if (classFromDB.teacher.toString() === userId) {
-      notifTarget = classFromDB.student
-      notifType = 'cancel-teacher'
-    }
-    
-    await classFromDB.deleteOne()
-    await Notification.create({ source: userId, target: notifTarget, type: notifType})
+    await Class.findByIdAndDelete(classId)
     res.status(200).send()
   } catch (error) {
     next(error);
@@ -196,17 +181,6 @@ router.put('/classes/:classId/reschedule', isAuthenticated, async (req, res, nex
     updatedClass.reschedule = {new_date: date, new_timeslot: timeslot, status: 'pending', initiator: userId}
     await updatedClass.save()
 
-    let notifTarget, notifType
-    if (updatedClass.student.toString() === userId) {
-      notifTarget = updatedClass.teacher
-      notifType = 'reschedule-student-pending'
-    }
-    if (updatedClass.teacher.toString() === userId) {
-      notifTarget = updatedClass.student
-      notifType = 'reschedule-teacher-pending'
-    }
-
-    await Notification.create({ source: userId, target: notifTarget, type: notifType})
     res.status(200).json(updatedClass)
   } catch (error) {
     next(error);
@@ -227,7 +201,6 @@ router.put('/classes/:classId/reschedule/withdraw', isAuthenticated, async (req,
 });
 
 router.put('/classes/:classId/reschedule/accept', isAuthenticated, async (req, res, next) => {
-  const userId = req.payload._id
   const classId = req.params.classId
   try {
     const updatedClass = await Class.findById(classId).populate('teacher student', 'username profilePic')
@@ -235,17 +208,7 @@ router.put('/classes/:classId/reschedule/accept', isAuthenticated, async (req, r
     updatedClass.date = updatedClass.reschedule.new_date
     updatedClass.timeslot = updatedClass.reschedule.new_timeslot
     await updatedClass.save()
-    let notifTarget, notifType
-    if (updatedClass.student.toString() === userId) {
-      notifTarget = updatedClass.teacher
-      notifType = 'reschedule-student-accept'
-    }
-    if (updatedClass.teacher.toString() === userId) {
-      notifTarget = updatedClass.student
-      notifType = 'reschedule-teacher-accept'
-    }
     
-    await Notification.create({ source: userId, target: notifTarget, type: notifType})
     res.status(200).json(updatedClass)
   } catch (error) {
     next(error);
@@ -253,23 +216,12 @@ router.put('/classes/:classId/reschedule/accept', isAuthenticated, async (req, r
 });
 
 router.put('/classes/:classId/reschedule/decline', isAuthenticated, async (req, res, next) => {
-  const userId = req.payload._id
   const classId = req.params.classId
   try {
     const updatedClass = await Class.findById(classId).populate('teacher student', 'username profilePic')
     updatedClass.reschedule.status = "declined"
     await updatedClass.save()
-    let notifTarget, notifType
-    if (updatedClass.student.toString() === userId) {
-      notifTarget = updatedClass.teacher
-      notifType = 'reschedule-student-decline'
-    }
-    if (updatedClass.teacher.toString() === userId) {
-      notifTarget = updatedClass.student
-      notifType = 'reschedule-teacher-decline'
-    }
     
-    await Notification.create({ source: userId, target: notifTarget, type: notifType})
     res.status(200).json(updatedClass)
   } catch (error) {
     next(error);
@@ -366,7 +318,7 @@ router.put('/decks/:deckId/cards', isAuthenticated, async (req, res, next) => {
   const updatedCards = []
   try {
     for (let card of cards) {
-      const updatedCard = await Flashcard.findByIdAndUpdate(card._id, { priority: card.priority })
+      const updatedCard = await Flashcard.findByIdAndUpdate(card._id, { priority: card.priority }, { new: true })
       updatedCards.push(updatedCard)
     }
     res.status(200).json(updatedCards)

@@ -8,6 +8,7 @@ const io = socketIo(server);
 const Chat = require('../models/Chat.model');
 const Message = require('../models/Message.model');
 const Notification = require('../models/Notification.model');
+const { formatDistanceToNow } = require('date-fns');
 
 io.on('connection', (socket) => {
 
@@ -18,7 +19,6 @@ io.on('connection', (socket) => {
     const chats = await Chat.find({ participants: user._id }).lean();
     for (let chat of chats) {
       socket.join(chat._id.toString());
-      console.log(`${user.username} joined chat ${chat._id}`);
     }
   });
 
@@ -33,11 +33,20 @@ io.on('connection', (socket) => {
       if (!existingNotif) {
         const notification = await Notification.create({ source: msg.sender, target: msg.recipient, type: 'message' })
         await notification.populate('source')
-        notification.timeDiff = formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })
-        io.to(msg.recipient).emit('newNotification', notification)
+        const notifObj = notification.toObject()
+        notifObj.timeDiff = formatDistanceToNow(new Date(notifObj.createdAt), { addSuffix: true })
+        io.to(msg.recipient).emit('newNotification', notifObj)
       }
     }
     
+  });
+
+  socket.on('notification', async (notif) => {
+    const notification = await Notification.create({...notif, read: false})
+    await notification.populate('source', 'username profilePic')
+    const notifObj = notification.toObject()
+    notifObj.timeDiff = formatDistanceToNow(new Date(notifObj.createdAt), { addSuffix: true })
+    io.to(notif.target).emit('newNotification', notifObj)
   });
 
   socket.on('disconnect', () => {

@@ -115,7 +115,7 @@ router.get("/notifications", isAuthenticated, async (req, res, next) => {
   }
 });
 
-router.put("/notification/:notificationId", isAuthenticated, async (req, res, next) => {
+router.put("/notifications/:notificationId", isAuthenticated, async (req, res, next) => {
   const notifId = req.params.notificationId;
   try {
     await Notification.findByIdAndUpdate(notifId, { read: true });
@@ -125,7 +125,7 @@ router.put("/notification/:notificationId", isAuthenticated, async (req, res, ne
   }
 });
 
-router.delete("/notification/:notificationId", isAuthenticated, async (req, res, next) => {
+router.delete("/notifications/:notificationId", isAuthenticated, async (req, res, next) => {
   const notifId = req.params.notificationId;
   try {
     await Notification.findByIdAndDelete(notifId);
