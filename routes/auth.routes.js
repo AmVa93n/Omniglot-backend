@@ -16,9 +16,7 @@ const saltRounds = 10;
 // POST /auth/signup  - Creates a new user in the database
 router.post("/signup", fileUploader.single("profilePic"), async (req, res, next) => {
   const { email, password, username, gender, birthdate, country, lang_teach, lang_learn, professional, private } = req.body;
-  const profilePic = req.file ? req.file.path : null
-  const isPrivate = !!private
-  const isProfessional = !!professional
+  const profilePic = req.file ? req.file.path : null;
 
   // This regular expression check that the email is of a valid format
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -53,11 +51,23 @@ router.post("/signup", fileUploader.single("profilePic"), async (req, res, next)
   try {
     // Create the new user in the database
     // We return a pending promise, which allows us to chain another `then`
-    const createdUser = await User.create({ email, password: hashedPassword, username, gender, birthdate, country, profilePic, 
-      lang_teach, lang_learn, private: isPrivate, professional: isProfessional, chats: [], offers: [] });
+    const createdUser = await User.create({ 
+      email, password: hashedPassword, username, gender, birthdate, country, profilePic, 
+      lang_teach, lang_learn, private: !!private, professional: !!professional 
+    });
+
+    if (!!professional) {
+        const stripeAccount = await stripe.accounts.create({
+          country: 'US',
+          email: email,
+          type: 'standard',
+        });
+        createdUser.stripeAccountId = stripeAccount.id
+        await createdUser.save()
+    }
     
     // Create a new object that doesn't expose the password
-    const user = { email, username, profilePic, _id: createdUser._id };
+    const user = { _id: createdUser._id };
 
     // Send a json response containing the user object
     res.status(201).json({ user: user });
@@ -90,11 +100,8 @@ router.post("/login", async (req, res, next) => {
     const passwordCorrect = bcrypt.compareSync(password, foundUser.password);
 
     if (passwordCorrect) {
-      // Deconstruct the user object to omit the password
-      const { _id, email, username, profilePic, professional } = foundUser;
-
       // Create an object that will be set as the token payload
-      const payload = { _id, email, username, profilePic, professional };
+      const payload = { _id: foundUser._id };
 
       // Create a JSON Web Token and sign it
       const authToken = jwt.sign(payload, process.env.TOKEN_SECRET, {

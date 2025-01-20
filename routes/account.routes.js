@@ -43,17 +43,18 @@ router.delete("/profile", isAuthenticated, async (req, res, next) => {
 router.put('/profile', fileUploader.single('profilePic'), isAuthenticated, async (req, res, next) => {
     const userId = req.payload._id
     const { username, email, gender, birthdate, country, lang_teach, lang_learn, professional, private } = req.body;
-    const profilePic = req.file ? req.file.path : null;
+    const user = await User.findById(userId);
+    const profilePic = req.file ? req.file.path : user.profilePic;
 
-    const hasStripeAccount = await User.findById(userId).then(user => user.stripeAccountId);
-
-    if (professional && !hasStripeAccount) {
+    if (!!professional && !user.stripeAccountId) {
       try {
         const stripeAccount = await stripe.accounts.create({
           country: 'US',
           email: email,
           type: 'standard',
         });
+        user.stripeAccountId = stripeAccount.id;
+        await user.save();
         
       } catch (error) {
         console.error("An error occurred when calling the Stripe API to create an account", error);
@@ -61,8 +62,10 @@ router.put('/profile', fileUploader.single('profilePic'), isAuthenticated, async
     }
   
     try {
-      const updatedUser = await User.findByIdAndUpdate(userId, { username, email, gender, birthdate, country, 
-        lang_teach, lang_learn, professional, private, profilePic }, { new: true });
+      const updatedUser = await User.findByIdAndUpdate(userId,{ 
+        username, email, gender, birthdate, country, lang_teach, lang_learn, 
+        professional: !!professional, private: !!private, profilePic 
+      }, { new: true });
       res.status(200).json(updatedUser);
     } catch (error) {
         next(error);

@@ -91,7 +91,7 @@ router.get("/users/:userId", async (req, res, next) => {
 
     res.status(200).json(viewedUser);
   } catch (error) {
-    next(err);
+    next(error);
   }
 });
 
@@ -111,7 +111,7 @@ router.get("/notifications", isAuthenticated, async (req, res, next) => {
       res.status(200).json(notifications);
     }
   } catch (error) {
-    next(err);
+    next(error);
   }
 });
 
@@ -121,7 +121,7 @@ router.put("/notifications/:notificationId", isAuthenticated, async (req, res, n
     await Notification.findByIdAndUpdate(notifId, { read: true });
     res.status(200).send();
   } catch (error) {
-    next(err);
+    next(error);
   }
 });
 
@@ -131,7 +131,7 @@ router.delete("/notifications/:notificationId", isAuthenticated, async (req, res
     await Notification.findByIdAndDelete(notifId);
     res.status(200).send();
   } catch (error) {
-    next(err);
+    next(error);
   }
 });
 
