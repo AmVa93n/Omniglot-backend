@@ -9,7 +9,6 @@ const User = require("../models/User.model");
 const Offer = require("../models/Offer.model");
 const Class = require("../models/Class.model");
 const Review = require("../models/Review.model");
-const Notification = require("../models/Notification.model");
 const Deck = require("../models/Deck.model");
 const Flashcard = require("../models/Flashcard.model");
 const Transaction = require("../models/Transaction.model");
@@ -247,13 +246,11 @@ router.post('/reviews/:classId', isAuthenticated, async (req, res, next) => {
   const { rating, text } = req.body
   const classId = req.params.classId
   try {
-    const updatedClass = await Class.findById(classId)
+    const updatedClass = await Class.findByIdAndUpdate(classId, { isRated: true })
     const { teacher, date, language, level, classType, locationType } = updatedClass
-    await Review.create({ author: userId, subject: teacher, rating, text, date, language, level, classType, locationType})
-    updatedClass.isRated = true
-    await updatedClass.save()
-    await Notification.create({ source: userId, target: teacher, type: 'review'})
-    res.status(200).json(updatedClass)
+    const review = await Review.create({ author: userId, subject: teacher, rating, text, date, language, level, classType, locationType})
+    
+    res.status(200).json(review)
   } catch (error) {
     next(error);
   }
@@ -337,7 +334,6 @@ router.post('/decks/:deckId/clone', isAuthenticated, async (req, res, next) => {
     const cardsData = cards.map(card => ({ front: card.front, back: card.back, priority: 0, deck: clonedDeck }))
     await Flashcard.create(cardsData)
     
-    await Notification.create({ source: userId, target: deck.creator, type: 'clone'})
     res.status(200).send()
   } catch (error) {
     next(error);

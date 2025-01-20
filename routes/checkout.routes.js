@@ -5,7 +5,6 @@ const router = express.Router();
 const Offer = require("../models/Offer.model");
 const Class = require("../models/Class.model");
 const Transaction = require("../models/Transaction.model");
-const Notification = require("../models/Notification.model");
 
 // Require necessary (isAuthenticated) middleware in order to control access to specific routes
 const { isAuthenticated } = require("../middleware/jwt.middleware.js");
@@ -77,7 +76,6 @@ router.post('/:offerId/', isAuthenticated, async (req, res, next) => {
       amount: offer.price,
     })
 
-    await Notification.create({ source: userId, target: offer.creator, type: 'booking'})
     res.status(200).json(booking);
   } catch (error) {
     next(error)
