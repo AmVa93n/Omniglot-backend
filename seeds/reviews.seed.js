@@ -1,36 +1,40 @@
 const mongoose = require('mongoose');
 const User = require('../models/User.model');
 const Review = require('../models/Review.model');
+const Class = require('../models/Class.model');
 const Offer = require('../models/Offer.model');
 require("dotenv").config();
-const MONGO_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/ironhack-project2';
+const MONGO_URI = process.env.MONGODB_URI
 
-// seed database with 1-5 offers per professional profile
+// seed database with 1-25 reviews per professional profile
 async function seedDatabase() {
     await mongoose.connect(MONGO_URI)
-    const profUsers = await User.find({professional: true}).populate('offers')
-    const nonProfUsers = await User.find({professional: false})
+    const teachers = await User.find({professional: true})
+    const students = await User.find({professional: false})
     
-    for (let user of profUsers) {
+    for (let teacher of teachers) {
         let reviewCount = getRandomNumber(1,25)
 
         for (let i = 1; i < reviewCount+1; i++) {
-            let author = randomElement(nonProfUsers)._id
-            let offer = randomElement(user.offers)
-            let day = getRandomNumber(1,28).toString().padStart(2, '0')
-            let month = getRandomNumber(1,12).toString().padStart(2, '0')
-            let year = getRandomNumber(2020,2023)
+            const offers = await Offer.find({ creator: teacher._id });
+            const offer = randomElement(offers)
+            const { language, level, locationType, classType, location, maxGroupSize, duration } = offer
+            const student = randomElement(students)
+            // random date between 1-1-2020 and 31-12-2024
+            const date = new Date(getRandomNumber(1577836800000,1735689600000)).toISOString().split('T')[0]
+            const timeslot = randomElement(offer.timeslots)
+            const mockClass = await Class.create({ 
+              teacher, student, date, timeslot, duration, 
+              language, level, locationType, classType, location, maxGroupSize
+            })
 
-            let review = {
-                author,
-                subject: user._id,
-                date: `${year}-${month}-${day}`,
+            const review = {
+                author: student._id,
+                subject: teacher._id,
+                date,
                 text: generateLoremIpsum(),
                 rating: getRandomNumber(1,10),
-                language: offer.language,
-                level: offer.level,
-                locationType: offer.locationType,
-                classType: offer.classType,
+                class: mockClass._id
             }
             await Review.create(review);
         }

@@ -105,7 +105,7 @@ router.put('/offers/:offerId', isAuthenticated, async (req, res, next) => {
 
   try {
     const updatedOffer = await Offer.findByIdAndUpdate(offerId, {  name, language, level, locationType, location, weekdays, timeslots, 
-      duration, classType, maxGroupSize, price });
+      duration, classType, maxGroupSize, price }, { new: true }).lean()
     res.status(200).send(updatedOffer);
   } catch (err) {
     next(err);
@@ -238,6 +238,7 @@ router.get('/reviews', isAuthenticated, async (req, res, next) => {
     const userId = req.payload._id
     try {
       const reviews = await Review.find({ subject: userId }).populate('author')
+        .populate('class', 'classType locationType language level').lean()
       res.status(200).json(reviews);
     } catch (error) {
       next(error);
@@ -251,7 +252,7 @@ router.post('/reviews/:classId', isAuthenticated, async (req, res, next) => {
   try {
     const updatedClass = await Class.findByIdAndUpdate(classId, { isRated: true })
     const { teacher, date, language, level, classType, locationType } = updatedClass
-    const review = await Review.create({ author: userId, subject: teacher, rating, text, date, language, level, classType, locationType})
+    const review = await Review.create({ author: userId, subject: teacher, rating, text, date, class: classId})
     
     res.status(200).json(review)
   } catch (error) {

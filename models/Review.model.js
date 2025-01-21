@@ -6,10 +6,7 @@ const reviewSchema = new Schema({
   rating: {type: Number, required: true},
   text: {type: String, required: true},
   date: {type: String, required: true},
-  language: {type: String, required: true},
-  level: {type: String, required: true},
-  classType: {type: String, required: true},
-  locationType: {type: String, required: true},
+  class: {type: Schema.Types.ObjectId, ref: 'Class', required: true}
 });
 
 const Review = model('Review', reviewSchema);

@@ -13,7 +13,6 @@ const { isAuthenticated } = require("../middleware/jwt.middleware.js");
 // How many rounds should bcrypt run the salt (default - 10 rounds)
 const saltRounds = 10;
 
-// POST /auth/signup  - Creates a new user in the database
 router.post("/signup", fileUploader.single("profilePic"), async (req, res, next) => {
   const { email, password, username, gender, birthdate, country, lang_teach, lang_learn, professional, private } = req.body;
   const profilePic = req.file ? req.file.path : null;
@@ -29,28 +28,22 @@ router.post("/signup", fileUploader.single("profilePic"), async (req, res, next)
   const passwordRegex = /(?=.*\d)(?=.*[a-z])(?=.*[A-Z]).{8,}/;
   if (!passwordRegex.test(password)) {
     res.status(400).json({
-      message:
-        "Password must have at least 8 characters and contain at least one number, one lowercase and one uppercase letter.",
+      message: "Password must have at least 8 characters and contain at least one number, one lowercase and one uppercase letter.",
     });
     return;
   }
 
-  // Check the users collection if a user with the same email already exists
   const foundUser = await User.findOne({ email })
-    
-  // If the user with the same email already exists, send an error response
   if (foundUser) {
     res.status(400).json({ message: "User already exists." });
     return;
   }
 
-  // If email is unique, proceed to hash the password
+  // hash the password
   const salt = bcrypt.genSaltSync(saltRounds);
   const hashedPassword = bcrypt.hashSync(password, salt);
 
   try {
-    // Create the new user in the database
-    // We return a pending promise, which allows us to chain another `then`
     const createdUser = await User.create({ 
       email, password: hashedPassword, username, gender, birthdate, country, profilePic, 
       lang_teach, lang_learn, private: !!private, professional: !!professional 
@@ -65,18 +58,13 @@ router.post("/signup", fileUploader.single("profilePic"), async (req, res, next)
         createdUser.stripeAccountId = stripeAccount.id
         await createdUser.save()
     }
-    
-    // Create a new object that doesn't expose the password
-    const user = { _id: createdUser._id };
 
-    // Send a json response containing the user object
-    res.status(201).json({ user: user });
+    res.status(201).json(createdUser);
   } catch (err) {
     next(err); // In this case, we send error handling to the error handling middleware.
   }
 });
 
-// POST  /auth/login - Verifies email and password and returns a JWT
 router.post("/login", async (req, res, next) => {
   const { email, password } = req.body;
 
@@ -87,11 +75,8 @@ router.post("/login", async (req, res, next) => {
   }
 
   try {
-    // Check the users collection if a user with the same email exists
     const foundUser = await User.findOne({ email })
-        
     if (!foundUser) {
-      // If the user is not found, send an error response
       res.status(401).json({ message: "User not found." });
       return;
     }
@@ -100,16 +85,13 @@ router.post("/login", async (req, res, next) => {
     const passwordCorrect = bcrypt.compareSync(password, foundUser.password);
 
     if (passwordCorrect) {
-      // Create an object that will be set as the token payload
       const payload = { _id: foundUser._id };
-
       // Create a JSON Web Token and sign it
       const authToken = jwt.sign(payload, process.env.TOKEN_SECRET, {
         algorithm: "HS256",
         expiresIn: "7d",
       });
 
-      // Send the token as the response
       res.status(200).json({ authToken: authToken });
     } else {
       res.status(401).json({ message: "Unable to authenticate the user" });
@@ -119,7 +101,6 @@ router.post("/login", async (req, res, next) => {
   }
 });
 
-// GET  /auth/verify  -  Used to verify JWT stored on the client
 router.get("/verify", isAuthenticated, (req, res, next) => {
   // If JWT token is valid the payload gets decoded by the
   // isAuthenticated middleware and is made available on `req.payload`

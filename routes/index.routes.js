@@ -83,10 +83,11 @@ router.get("/users/:userId", async (req, res, next) => {
     
     // Populate offers, reviews and decks for the viewed user
     viewedUser.offers = await Offer.find({ creator: viewedUserId }).lean();
-    viewedUser.reviews = await Review.find({ subject: viewedUserId }).populate('author').lean();
     viewedUser.decks = await Deck.find({ creator: viewedUserId }).lean();
+    viewedUser.reviews = await Review.find({ subject: viewedUserId }).populate('author')
+      .populate('class', 'language level classType locationType').lean();
     for (let deck of viewedUser.decks) {
-      deck.cards = await Flashcard.find({ deck: deck._id });
+      deck.cards = await Flashcard.find({ deck: deck._id }).lean();
     }
 
     res.status(200).json(viewedUser);
